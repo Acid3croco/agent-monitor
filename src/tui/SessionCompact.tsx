@@ -86,6 +86,12 @@ interface Glyphs {
 }
 const SINGLE: Glyphs = { tl: '┌', tr: '┐', bl: '└', br: '┘', h: '─', v: '│' };
 const BOLD: Glyphs = { tl: '┏', tr: '┓', bl: '┗', br: '┛', h: '━', v: '┃' };
+const SUB_SINGLE: Glyphs = { tl: '┌', tr: '┐', bl: '└', br: '┘', h: '┄', v: '┆' };
+const SUB_BOLD: Glyphs = { tl: '┏', tr: '┓', bl: '┗', br: '┛', h: '┅', v: '┇' };
+
+function isSubagent(transcriptPath: string | null): boolean {
+  return transcriptPath ? transcriptPath.includes('/subagents/') : false;
+}
 
 export interface SessionCompactProps {
   cell: SessionRow;
@@ -109,7 +115,10 @@ export const SessionCompact = React.memo(
     const color = STATE_COLOR[state] ?? 'white';
     const dim = state === 'idle' || state === 'stale' || state === 'done';
     const showSpinner = state === 'tool' || state === 'thinking';
-    const glyphs = focused ? BOLD : SINGLE;
+    const isSub = isSubagent(cell.transcript_path);
+    const glyphs = focused
+      ? isSub ? SUB_BOLD : BOLD
+      : isSub ? SUB_SINGLE : SINGLE;
     const innerWidth = Math.max(10, width - 2);
 
     // --- top border: ┌─ <Provider · cwd · freshness> ────┐ ---
