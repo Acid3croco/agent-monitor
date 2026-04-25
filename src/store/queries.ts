@@ -27,17 +27,18 @@ export interface SessionUpsert {
   current_tool?: string | null;
   last_prompt?: string | null;
   observed_parent_pid?: number | null;
+  origin?: string | null;
 }
 
 const SQL_UPSERT_SESSION = `
 INSERT INTO sessions (
   key, provider, session_id, transcript_path, cwd, model, cli_version,
   pid, process_start_unix, started_at_ms, last_event_at_ms,
-  prior_state, state, current_tool, last_prompt, observed_parent_pid
+  prior_state, state, current_tool, last_prompt, observed_parent_pid, origin
 ) VALUES (
   $key, $provider, $session_id, $transcript_path, $cwd, $model, $cli_version,
   $pid, $process_start_unix, $observed_at_ms, $observed_at_ms,
-  $prior_state, $state, $current_tool, $last_prompt, $observed_parent_pid
+  $prior_state, $state, $current_tool, $last_prompt, $observed_parent_pid, $origin
 )
 ON CONFLICT(key) DO UPDATE SET
   transcript_path     = COALESCE(excluded.transcript_path, sessions.transcript_path),
@@ -51,7 +52,8 @@ ON CONFLICT(key) DO UPDATE SET
   state               = excluded.state,
   current_tool        = excluded.current_tool,
   last_prompt         = COALESCE(excluded.last_prompt,     sessions.last_prompt),
-  observed_parent_pid = COALESCE(excluded.observed_parent_pid, sessions.observed_parent_pid)
+  observed_parent_pid = COALESCE(excluded.observed_parent_pid, sessions.observed_parent_pid),
+  origin              = COALESCE(excluded.origin,          sessions.origin)
 `;
 
 export function upsertSession(row: SessionUpsert): void {
@@ -71,6 +73,7 @@ export function upsertSession(row: SessionUpsert): void {
     $current_tool: row.current_tool ?? null,
     $last_prompt: row.last_prompt ?? null,
     $observed_parent_pid: row.observed_parent_pid ?? null,
+    $origin: row.origin ?? null,
   });
 }
 

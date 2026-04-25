@@ -111,6 +111,10 @@ interface NormalizedRollout {
   userPrompt: string | null;
   providerTs: string | null;
   observedAtMs: number;
+  // session_meta.payload.source: 'cli' | 'exec' | 'mcp' | other. Used to
+  // distinguish human-driven sessions from MCP-spawned children. Only set on
+  // the session_meta line; metadata-only callsites pass null.
+  origin: string | null;
 }
 
 // Pull metadata-only fields off a turn_context line. Returns null when there's
@@ -151,6 +155,7 @@ function normalizeCodexLine(
         userPrompt: null,
         providerTs,
         observedAtMs: observed,
+        origin: asString(payload.source),
       };
     }
 
@@ -168,6 +173,7 @@ function normalizeCodexLine(
         userPrompt: null,
         providerTs,
         observedAtMs: observed,
+        origin: null,
       };
     }
 
@@ -187,6 +193,7 @@ function normalizeCodexLine(
             userPrompt: msg,
             providerTs,
             observedAtMs: observed,
+            origin: null,
           };
         }
         case 'task_complete': {
@@ -199,6 +206,7 @@ function normalizeCodexLine(
             userPrompt: null,
             providerTs,
             observedAtMs: observed,
+            origin: null,
           };
         }
         // Ignored: task_started (we derive thinking from user_prompt),
@@ -222,6 +230,7 @@ function normalizeCodexLine(
             userPrompt: null,
             providerTs,
             observedAtMs: observed,
+            origin: null,
           };
         }
         case 'function_call_output': {
@@ -234,6 +243,7 @@ function normalizeCodexLine(
             userPrompt: null,
             providerTs,
             observedAtMs: observed,
+            origin: null,
           };
         }
         // Ignored: message (assistant text), reasoning, web_search_call.
@@ -308,6 +318,7 @@ function persistEvent(
     current_tool:
       'current_tool' in patch ? patch.current_tool ?? null : prev?.current_tool ?? null,
     last_prompt: norm.userPrompt ? summarizePrompt(norm.userPrompt) : null,
+    origin: norm.origin,
   };
 
   upsertSession(upsert);

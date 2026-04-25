@@ -38,7 +38,7 @@ function tally(
 }
 
 const KEYMAP_GRID =
-  '[d]ensity [a]ll [c]opy-resume [/]filter [r]econcile [enter]detail [q]uit';
+  '[d]ensity [a]ll [m]cp [c]opy-resume [/]filter [r]econcile [enter]detail [q]uit';
 const KEYMAP_DETAIL = '[esc]back [j/k]scroll [q]uit';
 
 export function StatusBar({ nowMs }: { nowMs: number }): React.ReactElement {

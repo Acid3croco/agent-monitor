@@ -85,6 +85,10 @@ export interface SessionRow {
   current_tool: string | null;
   last_prompt: string | null;
   observed_parent_pid: number | null;
+  // Codex sessions carry a `source` in session_meta: 'cli' (interactive),
+  // 'exec' (one-shot codex exec), 'mcp' (spawned by another agent via MCP).
+  // null when unknown (Claude sessions or pre-migration rows).
+  origin: string | null;
 }
 
 // SQLite events row (after insert; id is auto-assigned).

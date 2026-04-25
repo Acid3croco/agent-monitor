@@ -35,6 +35,7 @@ export interface TuiState {
   filter: string;
   filterMode: boolean; // true while user is editing the filter text
   showAll: boolean;   // when false, hide sessions whose display state is stale/done
+  showMcp: boolean;   // when false, hide MCP-spawned codex sessions (origin='mcp')
   density: Density;   // grid-cell renderer (cycled with `d`); not persisted
 
   // detail
@@ -56,6 +57,7 @@ export interface TuiState {
   setFilter: (s: string) => void;
   setFilterMode: (on: boolean) => void;
   setShowAll: (on: boolean) => void;
+  setShowMcp: (on: boolean) => void;
   setDensity: (d: Density) => void;
   cycleDensity: () => void;
   setRecentEvents: (key: string, events: EventRow[]) => void;
@@ -86,6 +88,7 @@ export const useStore = create<TuiState>((set, get) => ({
   filter: '',
   filterMode: false,
   showAll: false,
+  showMcp: false,
   density: 'card',
   recentEvents: new Map(),
   eventScroll: 0,
@@ -152,6 +155,7 @@ export const useStore = create<TuiState>((set, get) => ({
   setFilter: (s) => set({ filter: s }),
   setFilterMode: (on) => set({ filterMode: on }),
   setShowAll: (on) => set({ showAll: on }),
+  setShowMcp: (on) => set({ showMcp: on }),
   setDensity: (d) => set({ density: d }),
   cycleDensity: () => {
     const cur = get().density;
@@ -178,9 +182,10 @@ export function visibleKeys(
   order: string[],
   sessions: Map<string, SessionRow>,
   filter: string,
-  opts?: { showAll?: boolean; nowMs?: number },
+  opts?: { showAll?: boolean; showMcp?: boolean; nowMs?: number },
 ): string[] {
   const showAll = opts?.showAll ?? true;
+  const showMcp = opts?.showMcp ?? true;
   const nowMs = opts?.nowMs ?? Date.now();
   const f = filter.trim().toLowerCase();
 
@@ -192,6 +197,11 @@ export function visibleKeys(
       const display = applyLiveness(r, nowMs);
       if (display === 'stale' || display === 'done') return false;
     }
+
+    // Hide MCP-spawned codex sessions by default — they're not waiting for
+    // human input, they're tied up serving a Claude session via the
+    // mcp__codex__codex tool. Press `m` to reveal them.
+    if (!showMcp && r.origin === 'mcp') return false;
 
     if (!f) return true;
     const haystack = `${r.provider} ${r.cwd ?? ''} ${r.state} ${r.current_tool ?? ''} ${

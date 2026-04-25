@@ -80,6 +80,7 @@ function makeStore() {
       last_prompt: patch.last_prompt ?? existing?.last_prompt ?? null,
       observed_parent_pid:
         patch.observed_parent_pid ?? existing?.observed_parent_pid ?? null,
+      origin: existing?.origin ?? null,
     };
     sessions.set(patch.key, merged);
   }
@@ -243,6 +244,7 @@ describe('reducer: session_resume on existing key', () => {
       current_tool: null,
       last_prompt: null,
       observed_parent_pid: null,
+    origin: null,
     };
     const second = reduce(env, '/tmp/x.jsonl', 100, {
       lookup: () => fakeRow,

@@ -90,6 +90,7 @@ export function Grid(): React.ReactElement {
   const filter = useStore((s) => s.filter);
   const filterMode = useStore((s) => s.filterMode);
   const showAll = useStore((s) => s.showAll);
+  const showMcp = useStore((s) => s.showMcp);
   const density = useStore((s) => s.density);
   const tick = useStore((s) => s.tick);
   const sessionStats = useStore((s) => s.sessionStats);
@@ -102,8 +103,8 @@ export function Grid(): React.ReactElement {
   // Recompute on every tick so display-state transitions (idle/stale) move
   // sessions in/out of view as their last_event_at_ms ages.
   const visible = useMemo(
-    () => visibleKeys(order, sessions, filter, { showAll, nowMs: Date.now() }),
-    [order, sessions, filter, showAll, tick],
+    () => visibleKeys(order, sessions, filter, { showAll, showMcp, nowMs: Date.now() }),
+    [order, sessions, filter, showAll, showMcp, tick],
   );
 
   const total = order.length;

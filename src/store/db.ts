@@ -57,6 +57,9 @@ function applyMigrations(database: Database): void {
   if (!have.has('observed_parent_pid')) {
     database.exec('ALTER TABLE sessions ADD COLUMN observed_parent_pid INTEGER');
   }
+  if (!have.has('origin')) {
+    database.exec('ALTER TABLE sessions ADD COLUMN origin TEXT');
+  }
 }
 
 // Default lazy accessor. If we already have a handle (from a previous

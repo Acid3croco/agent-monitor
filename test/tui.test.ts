@@ -40,6 +40,7 @@ function row(over: Partial<SessionRow>): SessionRow {
     current_tool: null,
     last_prompt: null,
     observed_parent_pid: null,
+    origin: null,
     ...over,
   };
 }

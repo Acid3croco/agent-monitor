@@ -14,6 +14,7 @@
 //   /             enter filter mode
 //   esc           clear filter / exit filter mode
 //   a             toggle show-all (incl. stale + done sessions)
+//   m             toggle MCP-spawned codex visibility (origin='mcp')
 //   d             cycle density (card -> compact -> row)
 //   c             copy `--resume <focused_sid>` to clipboard (OSC 52)
 //   ctrl-d        scroll half-page down
@@ -52,6 +53,7 @@ export type Action =
   | { type: 'enter-filter' }
   | { type: 'clear-filter' }
   | { type: 'toggle-show-all' }
+  | { type: 'toggle-show-mcp' }
   | { type: 'cycle-density' }
   | { type: 'copy-resume' }
   | { type: 'reconcile' }
@@ -104,6 +106,7 @@ export function handleGridKey(input: string, key: KeyEvent): Action {
   if (input === '/') return { type: 'enter-filter' };
   if (key.escape) return { type: 'clear-filter' };
   if (input === 'a') return { type: 'toggle-show-all' };
+  if (input === 'm') return { type: 'toggle-show-mcp' };
   if (input === 'd') return { type: 'cycle-density' };
   if (input === 'c') return { type: 'copy-resume' };
   if (input === 'r') return { type: 'reconcile' };
@@ -145,6 +148,8 @@ export function applyActionToStore(
       return { ...state, filter: '', filterMode: false };
     case 'toggle-show-all':
       return state; // App owns the showAll slice; pure helper just acks
+    case 'toggle-show-mcp':
+      return state; // App owns the showMcp slice; pure helper just acks
     case 'cycle-density':
       return state; // App owns the density slice; pure helper just acks
     case 'copy-resume':

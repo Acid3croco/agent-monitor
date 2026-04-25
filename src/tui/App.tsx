@@ -169,7 +169,7 @@ function App(): React.ReactElement {
         // Auto-focus first cell on first non-empty tick so the user has
         // something to navigate from immediately.
         const st = useStore.getState();
-        const visOpts = { showAll: st.showAll, nowMs: now };
+        const visOpts = { showAll: st.showAll, showMcp: st.showMcp, nowMs: now };
         if (st.focusedKey == null && rows.length > 0) {
           const vis = visibleKeys(st.order, st.sessions, st.filter, visOpts);
           if (vis.length > 0) st.setFocusedKey(vis[0] ?? null);
@@ -280,7 +280,7 @@ function App(): React.ReactElement {
           if (awaitingG.current && now - awaitingG.current.at < 600) {
             // Second 'g' fired in time — jump to top.
             const vis = visibleKeys(st.order, st.sessions, st.filter, {
-              showAll: st.showAll,
+              showAll: st.showAll, showMcp: st.showMcp,
               nowMs: Date.now(),
             });
             if (vis.length > 0) {
@@ -297,7 +297,7 @@ function App(): React.ReactElement {
         if (input === 'G') {
           // Capital G: jump to last visible cell.
           const vis = visibleKeys(st.order, st.sessions, st.filter, {
-            showAll: st.showAll,
+            showAll: st.showAll, showMcp: st.showMcp,
             nowMs: Date.now(),
           });
           if (vis.length > 0) {
@@ -365,6 +365,10 @@ function App(): React.ReactElement {
           // mid-list staring at nothing meaningful.
           st.setScrollOffset(0);
           return;
+        case 'toggle-show-mcp':
+          st.setShowMcp(!st.showMcp);
+          st.setScrollOffset(0);
+          return;
         case 'cycle-density':
           st.cycleDensity();
           // Different density => different per-page step => previous offset
@@ -409,7 +413,7 @@ function App(): React.ReactElement {
         }
         case 'move-focus': {
           const vis = visibleKeys(st.order, st.sessions, st.filter, {
-            showAll: st.showAll,
+            showAll: st.showAll, showMcp: st.showMcp,
             nowMs: Date.now(),
           });
           const next = computeFocusAfterMove(
