@@ -22,13 +22,24 @@ import { PATHS } from '../paths.ts';
 const lockPath = path.join(PATHS.state, 'indexer.lock');
 let heldFd: number | null = null;
 
-function processAlive(pid: number): boolean {
+// Extra safety against PID reuse: kill(pid, 0) succeeds for ANY live process
+// with that PID, including unrelated programs the kernel reused the slot for.
+// We additionally verify the cmdline mentions our entry path so we don't keep
+// deferring to e.g. a long-lived `vim` that landed on the previous writer's PID.
+function processIsOurs(pid: number): boolean {
   if (!Number.isFinite(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
-    return true;
   } catch {
     return false;
+  }
+  try {
+    const cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf-8');
+    // Match: contains src/cli.ts (the TUI entry) or the installed bin name.
+    return cmdline.includes('src/cli.ts') || cmdline.includes('agent-monitor');
+  } catch {
+    // /proc unreadable; conservatively treat as ours (don't steal).
+    return true;
   }
 }
 
@@ -51,7 +62,7 @@ export function tryAcquireWriter(): boolean {
     try {
       const raw = readFileSync(lockPath, 'utf-8').trim();
       const heldBy = parseInt(raw, 10);
-      if (processAlive(heldBy)) return false;
+      if (processIsOurs(heldBy)) return false;
       // Stale lock — owner is gone. Remove and retry once.
       try {
         unlinkSync(lockPath);
@@ -71,7 +82,7 @@ export function getWriterStatus(): 'this' | 'other' | 'none' {
   try {
     const raw = readFileSync(lockPath, 'utf-8').trim();
     const heldBy = parseInt(raw, 10);
-    if (processAlive(heldBy)) return 'other';
+    if (processIsOurs(heldBy)) return 'other';
     return 'none';
   } catch {
     return 'none';
