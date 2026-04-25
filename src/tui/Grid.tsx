@@ -54,26 +54,33 @@ function pickWidth(density: 'card' | 'compact', termCols: number): number {
 }
 
 // Group an ordered key list by the row's cwd, preserving the input order both
-// within groups and across groups (first-occurrence wins).
+// Within each group, order is preserved from the input (i.e. recency from
+// visibleKeys). Across groups, real cwds sort alphabetically and the (no cwd)
+// bucket is pinned at the end so unknown-cwd sessions never push real groups
+// off-screen.
+const NO_CWD_LABEL = '(no cwd)';
 function groupByCwd(
   keys: string[],
   sessions: Map<string, SessionRow>,
 ): Array<{ cwd: string; keys: string[] }> {
-  const order: string[] = [];
   const buckets = new Map<string, string[]>();
   for (const k of keys) {
     const r = sessions.get(k);
     if (!r) continue;
-    const cwd = r.cwd ?? '(no cwd)';
+    const cwd = r.cwd ?? NO_CWD_LABEL;
     let b = buckets.get(cwd);
     if (!b) {
       b = [];
       buckets.set(cwd, b);
-      order.push(cwd);
     }
     b.push(k);
   }
-  return order.map((cwd) => ({ cwd, keys: buckets.get(cwd)! }));
+  const cwds = Array.from(buckets.keys()).sort((a, b) => {
+    if (a === NO_CWD_LABEL) return 1;
+    if (b === NO_CWD_LABEL) return -1;
+    return a.localeCompare(b);
+  });
+  return cwds.map((cwd) => ({ cwd, keys: buckets.get(cwd)! }));
 }
 
 export function Grid(): React.ReactElement {
