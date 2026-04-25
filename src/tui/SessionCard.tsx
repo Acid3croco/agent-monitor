@@ -53,6 +53,13 @@ function shortCwd(cwd: string | null): string {
   return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
 }
 
+// Some Claude models carry a `[1m]` (1M-context) suffix in their ID. Visually
+// `[1m]` reads as a leaked ANSI bold escape; strip it for display.
+function shortModel(model: string | null): string {
+  if (!model) return '?';
+  return model.replace(/\[\d+m\]\s*$/, '').trim();
+}
+
 function fmtFreshness(lastEventMs: number, nowMs: number): string {
   const dSec = Math.max(0, Math.floor((nowMs - lastEventMs) / 1000));
   if (dSec < 3600) {
@@ -139,7 +146,7 @@ export const SessionCard = React.memo(
 
     // --- top border: ╭─ <provider · model · cwd> ─── <freshness> ─╮ ---
     const provider = PROVIDER_LABEL[cell.provider] ?? cell.provider;
-    const model = cell.model ?? '?';
+    const model = shortModel(cell.model);
     const cwd = shortCwd(cell.cwd);
     const freshness = fmtFreshness(cell.last_event_at_ms, nowMs);
 

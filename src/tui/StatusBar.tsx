@@ -10,7 +10,7 @@
 import React from 'react';
 import { Box, Text, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
-import { useStore } from './store.ts';
+import { useStore, visibleKeys } from './store.ts';
 import { applyLiveness } from '../liveness.ts';
 
 interface Counts {
@@ -53,6 +53,7 @@ export function StatusBar({ nowMs }: { nowMs: number }): React.ReactElement {
   useStdout();
 
   const mode = useStore((s) => s.mode);
+  const order = useStore((s) => s.order);
   const filter = useStore((s) => s.filter);
   const filterMode = useStore((s) => s.filterMode);
   const showAll = useStore((s) => s.showAll);
@@ -61,7 +62,16 @@ export function StatusBar({ nowMs }: { nowMs: number }): React.ReactElement {
   const setFilter = useStore((s) => s.setFilter);
   const setFilterMode = useStore((s) => s.setFilterMode);
 
-  const counts = tally(sessions, nowMs);
+  // When a filter is active, tally over the filtered set so the counts match
+  // what the user actually sees in the grid below. Otherwise tally globally.
+  const filtered = filter
+    ? new Map(
+        visibleKeys(order, sessions, filter, { showAll: true, nowMs })
+          .map((k) => [k, sessions.get(k)!] as const)
+          .filter(([, v]) => v != null),
+      )
+    : sessions;
+  const counts = tally(filtered, nowMs);
 
   // Keymap line: in filter-edit mode the input replaces the keymap.
   const keymap = mode === 'grid' ? KEYMAP_GRID : KEYMAP_DETAIL;
@@ -74,6 +84,7 @@ export function StatusBar({ nowMs }: { nowMs: number }): React.ReactElement {
       <Box>
         <Text bold>agent-monitor</Text>
         <Text dimColor> · </Text>
+        {filter ? <Text color="yellow">filtered </Text> : null}
         {counts.needs > 0 ? (
           <Text color="red" bold>
             ⚠ {counts.needs} needs you
