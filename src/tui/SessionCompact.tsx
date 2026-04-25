@@ -137,8 +137,8 @@ export const SessionCompact = React.memo(
     // Layout (between │ and │):
     //   1 edge_left + 2 spinner + state + padRight + turnsText + 1 edge_right = innerWidth
     const stateText = stateLabel(state, cell.current_tool);
-    const subsLabel =
-      subagentsTotal > 0 ? `${subagentsActive}/${subagentsTotal} subs` : '';
+    const subsLabel = subagentsActive > 0 ? `${subagentsActive} subs` : '';
+    void subagentsTotal; // kept on the prop for possible future detail-view use
     const turnsText =
       turns > 0
         ? subsLabel

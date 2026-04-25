@@ -178,11 +178,10 @@ export const SessionCard = React.memo(
     const topLine = `${glyphs.tl}${glyphs.h} ${title} ${filler} ${freshness} ${glyphs.h}${glyphs.tr}`;
 
     // --- line 2: state line --- (left: spinner+state+tool, right: turns)
-    // Progress hint: turn count + subagent count. Subs format is
-    // `<active>/<total> subs` only when total > 0. Lets the user confirm a
-    // session is progressing AND see fan-out at a glance.
-    const subsLabel =
-      subagentsTotal > 0 ? `${subagentsActive}/${subagentsTotal} subs` : '';
+    // Progress hint: turn count + active subagent count. Lifetime total is
+    // not shown — the user only cares which subagents are working *now*.
+    const subsLabel = subagentsActive > 0 ? `${subagentsActive} subs` : '';
+    void subagentsTotal; // kept on the prop for possible future detail-view use
     const turnsText =
       turns > 0
         ? subsLabel
