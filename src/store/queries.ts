@@ -122,13 +122,20 @@ SELECT state, COUNT(*) AS count FROM sessions GROUP BY state ORDER BY state
 // `<sid>/subagents/` directory). These are surfaced in the card UI so the user
 // can confirm a session is progressing without opening detail.
 //
+// Turn count uses COUNT(DISTINCT observed_at_ms / 10000) — i.e. dedup by
+// 10-second buckets — because the hook indexer and the rollout reconciler
+// both emit a user_prompt event for the same actual user message, with
+// different source_paths (so the (source_path, source_offset) unique index
+// doesn't catch them). Bucketing is the cheapest way to avoid the resulting
+// double-counts.
+//
 // The subagent self-match guard (`c.session_id != s.session_id`) is paranoid:
 // a parent's transcript_path doesn't contain its own session_id under
 // /subagents/, but the LIKE is loose so we filter out collisions defensively.
 const SQL_ALL_SESSION_STATS = `
 SELECT
   s.key AS key,
-  (SELECT COUNT(*) FROM events e
+  (SELECT COUNT(DISTINCT observed_at_ms / 10000) FROM events e
      WHERE e.session_key = s.key AND e.kind = 'user_prompt') AS turns,
   (SELECT COUNT(*) FROM sessions c
      WHERE c.session_id != s.session_id

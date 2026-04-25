@@ -27,6 +27,11 @@ import {
   type ReconcileStats,
 } from '../reconciler/index.ts';
 import { logError } from '../tui/log.ts';
+import {
+  getWriterStatus,
+  releaseWriter,
+  tryAcquireWriter,
+} from './writer-lock.ts';
 
 export interface AmbientStatus {
   // Wall-clock at the moment the most recent drain finished. null until 1st pass.
@@ -48,6 +53,10 @@ export interface AmbientStatus {
   // implicitly via filesScanned. For v1 we expose 0 -- truthful enough since
   // the loop runs every 1s. Reserved for the doctor surface.
   oldestUnreadFileAgeSec: number;
+  // Writer-election state. 'this' means we own the indexer.lock and are the
+  // sole writer; 'other' means another agent-monitor process holds it and
+  // we're running read-only; 'none' means no live writer claimed it yet.
+  writer: 'this' | 'other' | 'none';
 }
 
 export interface AmbientOptions {
@@ -75,6 +84,7 @@ function emptyStatus(): AmbientStatus {
     lastError: null,
     drainBacklogLines: 0,
     oldestUnreadFileAgeSec: 0,
+    writer: 'none',
   };
 }
 
@@ -111,16 +121,28 @@ export function startAmbientIndexer(opts: AmbientOptions = {}): AmbientHandle {
   let drainPromise: Promise<void> | null = null;
   let reconcilePromise: Promise<void> | null = null;
 
+  // Periodically attempt to claim the writer lock. If we get it, drain +
+  // reconcile do real work; otherwise we tick along as a read-only TUI and
+  // let the other process do the writing.
+  function refreshWriterStatus(): void {
+    const got = tryAcquireWriter();
+    status.writer = got ? 'this' : getWriterStatus();
+  }
+
   async function tickDrain(): Promise<void> {
     if (stopped || drainRunning) return;
+    refreshWriterStatus();
     drainRunning = true;
     const p = (async () => {
       try {
+        if (status.writer !== 'this') {
+          // Another TUI is the writer. Skip — its drain covers the spool.
+          return;
+        }
         const s = await drain();
         status.lastDrainAt = Date.now();
         status.lastDrainStats = s;
         status.drainBacklogLines = s.linesIngested;
-        // Successful pass clears the lastError IF that error was from drain.
         if (status.lastError?.source === 'drain') status.lastError = null;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -140,6 +162,10 @@ export function startAmbientIndexer(opts: AmbientOptions = {}): AmbientHandle {
     reconcileRunning = true;
     const p = (async () => {
       try {
+        if (status.writer !== 'this') {
+          // Read-only mode; reconcile is the writer's job.
+          return;
+        }
         const s = await reconcile();
         status.lastReconcileAt = Date.now();
         status.lastReconcileStats = s;
@@ -180,6 +206,8 @@ export function startAmbientIndexer(opts: AmbientOptions = {}): AmbientHandle {
       // Wait for any in-flight pass to finish so we don't close the DB while
       // it's mid-write.
       await Promise.allSettled([drainPromise, reconcilePromise]);
+      // Release the writer lock so another TUI can claim it on next try.
+      releaseWriter();
     },
   };
 }

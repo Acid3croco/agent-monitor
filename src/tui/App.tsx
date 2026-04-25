@@ -93,9 +93,12 @@ function AmbientFooter({
   const last = status.lastError
     ? `${status.lastError.source} err: ${status.lastError.message}`
     : 'OK';
+  // Writer flag: when 'other', this TUI is read-only — useful to know if
+  // the user wonders why their interactions don't seem to drive any writes.
+  const writer = status.writer;
   return (
     <Text dimColor>
-      idx: lastDrain={drainAge} · backlog={backlog} · last={last}
+      idx: lastDrain={drainAge} · backlog={backlog} · writer={writer} · last={last}
     </Text>
   );
 }

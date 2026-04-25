@@ -31,6 +31,15 @@ export function openDb(dbPath: string = PATHS.db): Database {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new Database(dbPath, { create: true });
   db.exec(loadSchema());
+  // Brief busy_timeout so a competing writer (another agent-monitor TUI mid
+  // writer-handoff, or our own retention pass) doesn't immediately fail with
+  // SQLITE_BUSY. The single-writer election in writer-lock.ts is the real
+  // arbiter; this is defense in depth.
+  try {
+    db.exec('PRAGMA busy_timeout = 1000');
+  } catch {
+    // PRAGMA may fail on read-only DBs; non-fatal.
+  }
   applyMigrations(db);
   _db = db;
   _dbPath = dbPath;
