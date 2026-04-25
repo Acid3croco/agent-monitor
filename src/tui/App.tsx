@@ -115,6 +115,9 @@ function App(): React.ReactElement {
 
   const [lastChanged, setLastChanged] = useState(0);
   const [ambient, setAmbient] = useState<AmbientStatus | null>(null);
+  // Transient one-line notice shown in the status footer (e.g. "copied: --resume X").
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Reconcile-in-flight guard so spamming 'r' only ever has one running.
   const reconcileRunning = useRef(false);
@@ -321,6 +324,42 @@ function App(): React.ReactElement {
           // is no longer the user's intent. Reset.
           st.setScrollOffset(0);
           return;
+        case 'copy-resume': {
+          // Copy `--resume <session_id>` for the focused cell. We use OSC 52
+          // (terminal-side clipboard, works over SSH and inside tmux given
+          // `set -g set-clipboard on`). Also always write to a fallback file
+          // so the user has something to `cat` if OSC 52 isn't honored.
+          if (!st.focusedKey) return;
+          const row = st.sessions.get(st.focusedKey);
+          if (!row) return;
+          // Leading space — handy when pasting after an alias that doesn't
+          // auto-space, and never harmful when pasting after \`claude\`/\`codex\`.
+          const text = ` --resume ${row.session_id}`;
+          try {
+            const b64 = Buffer.from(text, 'utf-8').toString('base64');
+            // Bell-terminated form (\x07) is the most-supported.
+            process.stdout.write(`\x1b]52;c;${b64}\x07`);
+          } catch (err) {
+            logError('osc52', err);
+          }
+          // Fallback file (always written, even on OSC 52 success — cheap).
+          try {
+            const fs = require('node:fs') as typeof import('node:fs');
+            const path = require('node:path') as typeof import('node:path');
+            const PATHS = require('../paths.ts').PATHS;
+            const f = path.join(PATHS.state, 'last-copy.txt');
+            fs.mkdirSync(path.dirname(f), { recursive: true });
+            fs.writeFileSync(f, text + '\n');
+          } catch (err) {
+            logError('copy-fallback', err);
+          }
+          // Toast for ~2.5s.
+          setToast(`copied: ${text}`);
+          if (toastTimer.current) clearTimeout(toastTimer.current);
+          toastTimer.current = setTimeout(() => setToast(null), 2500);
+          log(`copy-resume: ${text}`);
+          return;
+        }
         case 'move-focus': {
           const vis = visibleKeys(st.order, st.sessions, st.filter, {
             showAll: st.showAll,
@@ -389,6 +428,7 @@ function App(): React.ReactElement {
     <Box flexDirection="column">
       <StatusBar nowMs={nowMs} />
       <AmbientFooter status={ambient} nowMs={nowMs} />
+      {toast ? <Text color="green">{toast}</Text> : null}
       <Box marginTop={1}>{mode === 'grid' ? <Grid /> : <Detail />}</Box>
     </Box>
   );

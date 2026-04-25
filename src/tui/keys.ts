@@ -13,6 +13,7 @@
 //   esc           clear filter / exit filter mode
 //   a             toggle show-all (incl. stale + done sessions)
 //   d             cycle density (card -> compact -> row)
+//   c             copy `--resume <focused_sid>` to clipboard (OSC 52)
 //   ctrl-d        scroll half-page down
 //   ctrl-u        scroll half-page up
 //   r             force reconcile (handled at App level)
@@ -50,6 +51,7 @@ export type Action =
   | { type: 'clear-filter' }
   | { type: 'toggle-show-all' }
   | { type: 'cycle-density' }
+  | { type: 'copy-resume' }
   | { type: 'reconcile' }
   | { type: 'move-focus'; dx: -1 | 0 | 1; dy: -1 | 0 | 1 }
   | { type: 'scroll-events'; delta: number }
@@ -100,6 +102,7 @@ export function handleGridKey(input: string, key: KeyEvent): Action {
   if (key.escape) return { type: 'clear-filter' };
   if (input === 'a') return { type: 'toggle-show-all' };
   if (input === 'd') return { type: 'cycle-density' };
+  if (input === 'c') return { type: 'copy-resume' };
   if (input === 'r') return { type: 'reconcile' };
   if (input === 'j' || key.downArrow) return { type: 'move-focus', dx: 0, dy: 1 };
   if (input === 'k' || key.upArrow) return { type: 'move-focus', dx: 0, dy: -1 };
@@ -141,6 +144,8 @@ export function applyActionToStore(
       return state; // App owns the showAll slice; pure helper just acks
     case 'cycle-density':
       return state; // App owns the density slice; pure helper just acks
+    case 'copy-resume':
+      return state; // App owns the side effect; pure helper just acks
     case 'reconcile':
       return state;
     case 'move-focus':
