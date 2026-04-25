@@ -1,0 +1,10 @@
+{"provider":"claude","event":"SessionStart","session_id":"claude-fixture-001","observed_at_ms":1777068000000,"payload":{"cwd":"/home/jack/projects/tui","model":"claude-opus-4-7","version":"2.1.119","transcript_path":"/home/jack/.claude/projects/-home-jack-projects-tui/claude-fixture-001.jsonl","pid":12345,"process_start_unix":1777067990}}
+{"provider":"claude","event":"UserPromptSubmit","session_id":"claude-fixture-001","observed_at_ms":1777068001000,"payload":{"prompt":"add a memoization layer to the grid cells"}}
+{"provider":"claude","event":"PreToolUse","session_id":"claude-fixture-001","observed_at_ms":1777068002000,"payload":{"tool_name":"Bash","tool_input":{"command":"rg memo src/"}}}
+{"provider":"claude","event":"PostToolUse","session_id":"claude-fixture-001","observed_at_ms":1777068003000,"payload":{"tool_name":"Bash","tool_response":{"stdout":"src/Grid.tsx:42:  React.memo(...)","exit_code":0}}}
+{"provider":"claude","event":"Notification","session_id":"claude-fixture-001","observed_at_ms":1777068004000,"payload":{"type":"permission_request","message":"Claude is requesting permission to use Bash","tool_name":"Bash","permission_request":{"tool":"Bash","input":{"command":"rm -rf node_modules"}}}}
+{"provider":"claude","event":"PreToolUse","session_id":"claude-fixture-001","observed_at_ms":1777068005000,"payload":{"tool_name":"Bash","tool_input":{"command":"rm -rf node_modules"}}}
+{"provider":"claude","event":"PostToolUse","session_id":"claude-fixture-001","observed_at_ms":1777068006000,"payload":{"tool_name":"Bash","tool_response":{"stdout":"","exit_code":0}}}
+{"provider":"claude","event":"Notification","session_id":"claude-fixture-001","observed_at_ms":1777068007000,"payload":{"type":"idle","message":"Claude is waiting for your input"}}
+{"provider":"claude","event":"TurnComplete","session_id":"claude-fixture-001","observed_at_ms":1777068008000,"payload":{"turn_duration_ms":7500}}
+{"provider":"claude","event":"Stop","session_id":"claude-fixture-001","observed_at_ms":1777068009000,"payload":{"reason":"user_quit"}}

@@ -1,0 +1,10 @@
+{"timestamp":"2026-04-25T12:00:00.000Z","type":"session_meta","payload":{"id":"019dc000-0000-7000-8000-000000000001","timestamp":"2026-04-25T12:00:00.000Z","cwd":"/home/jack/projects/tui","originator":"codex_cli_rs","cli_version":"0.125.0","model_provider":"openai"}}
+{"timestamp":"2026-04-25T12:00:00.500Z","type":"turn_context","payload":{"turn_id":"1","cwd":"/home/jack/projects/tui","model":"gpt-5.5","approval_policy":"never"}}
+{"timestamp":"2026-04-25T12:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"1","started_at":1777680001,"model_context_window":258400,"collaboration_mode_kind":"default"}}
+{"timestamp":"2026-04-25T12:00:01.100Z","type":"event_msg","payload":{"type":"user_message","message":"[redacted user message for fixture]","kind":"plain","images":null}}
+{"timestamp":"2026-04-25T12:00:02.000Z","type":"response_item","payload":{"type":"reasoning","summary":[],"content":null,"encrypted_content":"[redacted]"}}
+{"timestamp":"2026-04-25T12:00:02.500Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"[redacted]\",\"workdir\":\"/home/jack\"}","call_id":"call_redacted_001"}}
+{"timestamp":"2026-04-25T12:00:03.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_redacted_001","output":"[redacted output]"}}
+{"timestamp":"2026-04-25T12:00:03.500Z","type":"event_msg","payload":{"type":"agent_message","message":"[redacted agent reply]"}}
+{"timestamp":"2026-04-25T12:00:03.700Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1,"output_tokens":1,"cached_input_tokens":0,"reasoning_output_tokens":0,"total_tokens":2}}}}
+{"timestamp":"2026-04-25T12:00:04.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"1","last_agent_message":"[redacted agent reply]","completed_at":1777680004,"duration_ms":3000}}

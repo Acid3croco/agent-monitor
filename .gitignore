@@ -1,0 +1,22 @@
+node_modules/
+dist/
+build/
+*.log
+.DS_Store
+.env
+.env.local
+
+# Claude Code per-project settings — local to each clone.
+.claude/
+
+# Bun lockfile is committed (bun.lock). Old binary lockfile is not.
+bun.lockb
+
+# Local SQLite + WAL files.
+*.db
+*.db-shm
+*.db-wal
+
+# Internal validation artifacts (smoke captures contain real session paths).
+M5_SMOKE.md
+M6_SMOKE.md
