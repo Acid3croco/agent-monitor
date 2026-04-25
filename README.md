@@ -175,7 +175,7 @@ The Claude uninstall preserves any non-agent-monitor hooks you added independent
 ## Development
 
 ```bash
-bun test               # 81 tests
+bun test               # 85 tests
 bun run typecheck      # tsc --noEmit
 bun run src/cli.ts tui # run from source
 ```

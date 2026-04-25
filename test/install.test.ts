@@ -14,6 +14,7 @@ import {
   stripOurHooks,
   uninstallClaudeHooks,
 } from '../src/install.ts';
+import { parseInstallHooksArgs } from '../src/cli-install.ts';
 
 let tmpDir: string;
 let tmpSettings: string;
@@ -210,6 +211,68 @@ describe('applyClaudeHookInstall + uninstall round-trip', () => {
       if (event === 'Notification') continue;
       expect(after.hooks?.[event]).toBeUndefined();
     }
+  });
+});
+
+describe('parseInstallHooksArgs', () => {
+  test('recognizes --files-only', () => {
+    expect(parseInstallHooksArgs(['--files-only'])).toEqual({
+      dryRun: false,
+      uninstall: false,
+      filesOnly: true,
+    });
+  });
+
+  test('recognizes --dry-run, --uninstall, --files-only independently', () => {
+    expect(parseInstallHooksArgs([])).toEqual({
+      dryRun: false,
+      uninstall: false,
+      filesOnly: false,
+    });
+    expect(parseInstallHooksArgs(['--dry-run'])).toMatchObject({ dryRun: true });
+    expect(parseInstallHooksArgs(['--uninstall'])).toMatchObject({ uninstall: true });
+  });
+});
+
+describe('runInstallHooks idempotency (byte-equal predicate)', () => {
+  // The CLI short-circuits when JSON.stringify(currentJson, null, 2) ===
+  // JSON.stringify(nextJson, null, 2) — re-running install on a settings file
+  // we previously wrote must NOT generate a new .bak. Mirror that check here
+  // to guard against a future merge change that breaks idempotency at the
+  // serialized-bytes level (deep-equality is not enough — key ordering matters
+  // for the byte-equal predicate the CLI uses).
+  test('after install, replanning byte-matches current', () => {
+    fs.writeFileSync(tmpSettings, JSON.stringify({ permissions: { allow: ['Bash(*)'] } }, null, 2));
+
+    // First install.
+    const plan1 = planClaudeHookInstall(tmpSettings);
+    applyClaudeHookInstall(plan1);
+
+    // Replan against the now-installed file.
+    const plan2 = planClaudeHookInstall(tmpSettings);
+    const currentBytes = JSON.stringify(plan2.currentJson, null, 2);
+    const nextBytes = JSON.stringify(plan2.nextJson, null, 2);
+    expect(currentBytes).toBe(nextBytes);
+  });
+
+  test('byte-equal even when user has unrelated hooks alongside ours', () => {
+    const userHookCmd = '/home/user/scripts/notify.sh';
+    const original = {
+      hooks: {
+        Notification: [
+          { matcher: '', hooks: [{ type: 'command', command: userHookCmd }] },
+        ],
+      },
+    };
+    fs.writeFileSync(tmpSettings, JSON.stringify(original, null, 2));
+
+    const plan1 = planClaudeHookInstall(tmpSettings);
+    applyClaudeHookInstall(plan1);
+
+    const plan2 = planClaudeHookInstall(tmpSettings);
+    expect(JSON.stringify(plan2.currentJson, null, 2)).toBe(
+      JSON.stringify(plan2.nextJson, null, 2),
+    );
   });
 });
 
