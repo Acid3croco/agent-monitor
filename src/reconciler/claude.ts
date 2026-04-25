@@ -160,6 +160,18 @@ interface NormalizedRollout {
   observedAtMs: number;
 }
 
+// Subagent rollouts live at `<parent>/subagents/agent-<aid>.jsonl`. Each line
+// inside carries the PARENT's sessionId and the subagent's agentId. We want
+// subagent events on their OWN session row keyed by the agentId, otherwise
+// every subagent message inflates the parent's turn count and we never get a
+// separate card for the subagent. Returns the agentId from the file path or
+// null if the path isn't a subagent transcript.
+const SUBAGENT_PATH_RE = /\/subagents\/agent-([0-9a-f]+)\.jsonl$/;
+function subagentIdFromPath(filePath: string): string | null {
+  const m = SUBAGENT_PATH_RE.exec(filePath);
+  return m ? m[1] ?? null : null;
+}
+
 function normalizeClaudeLine(
   line: Json,
   filePath: string,
@@ -170,7 +182,17 @@ function normalizeClaudeLine(
 
   // Common envelope fields. Some line types (file-history-snapshot, last-prompt)
   // don't carry the full envelope; that's fine for the dropped types.
-  const sessionId = asString(line.sessionId);
+  // For subagent rollouts the line's `sessionId` is the parent's; we override
+  // with the agentId-derived id below so subagent rows live separately.
+  let sessionId = asString(line.sessionId);
+  const subId = subagentIdFromPath(filePath);
+  if (subId) {
+    // Use a shape that matches existing key formula and is recognizable in
+    // the UI. Pure hex agentId padded into a UUID-ish layout would be clever
+    // but lying; just prefix with `agent-` so the sid:label in the card is
+    // self-explanatory.
+    sessionId = `agent-${subId}`;
+  }
   const cwd = asString(line.cwd);
   const cliVersion = asString(line.version);
   const tsRaw = asString(line.timestamp);

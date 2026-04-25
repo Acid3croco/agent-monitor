@@ -118,20 +118,20 @@ SELECT state, COUNT(*) AS count FROM sessions GROUP BY state ORDER BY state
 `;
 
 // Per-session progress stats: turn count (number of user prompts handled) and
-// subagent count (other sessions whose transcript_path lives under the parent's
-// `<sid>/subagents/` directory). These are surfaced in the card UI so the user
-// can confirm a session is progressing without opening detail.
+// subagent count (other sessions actively running under the parent's
+// `<sid>/subagents/` directory). These are surfaced in the card UI so the
+// user can confirm a session is progressing without opening detail.
 //
 // Turn count uses COUNT(DISTINCT observed_at_ms / 10000) — i.e. dedup by
 // 10-second buckets — because the hook indexer and the rollout reconciler
 // both emit a user_prompt event for the same actual user message, with
 // different source_paths (so the (source_path, source_offset) unique index
-// doesn't catch them). Bucketing is the cheapest way to avoid the resulting
-// double-counts.
+// doesn't catch them). Bucketing is the cheapest way to avoid double-counts.
 //
-// The subagent self-match guard (`c.session_id != s.session_id`) is paranoid:
-// a parent's transcript_path doesn't contain its own session_id under
-// /subagents/, but the LIKE is loose so we filter out collisions defensively.
+// Subagent count is the number of subagent rows with activity in the last
+// 90 seconds — i.e. CURRENTLY RUNNING subagents, not the lifetime total.
+// Filters: matching transcript_path under <parent>/subagents/ AND distinct
+// session_id (defensive) AND a recent last_event_at_ms.
 const SQL_ALL_SESSION_STATS = `
 SELECT
   s.key AS key,
@@ -139,7 +139,8 @@ SELECT
      WHERE e.session_key = s.key AND e.kind = 'user_prompt') AS turns,
   (SELECT COUNT(*) FROM sessions c
      WHERE c.session_id != s.session_id
-       AND c.transcript_path LIKE '%' || s.session_id || '/subagents/%') AS subagents
+       AND c.transcript_path LIKE '%' || s.session_id || '/subagents/%'
+       AND c.last_event_at_ms > (CAST(strftime('%s','now') AS INTEGER) * 1000 - 90000)) AS subagents
 FROM sessions s
 `;
 
