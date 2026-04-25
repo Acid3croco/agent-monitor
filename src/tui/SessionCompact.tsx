@@ -93,6 +93,13 @@ function isSubagent(transcriptPath: string | null): boolean {
   return transcriptPath ? transcriptPath.includes('/subagents/') : false;
 }
 
+function contextPct(cell: SessionRow): number | null {
+  const used = cell.context_tokens_used;
+  const max = cell.context_tokens_max;
+  if (used == null || max == null || max <= 0) return null;
+  return Math.min(99, Math.floor((used / max) * 100));
+}
+
 export interface SessionCompactProps {
   cell: SessionRow;
   width: number;
@@ -139,21 +146,30 @@ export const SessionCompact = React.memo(
     const stateText = stateLabel(state, cell.current_tool);
     const subsLabel = subagentsActive > 0 ? `${subagentsActive} subs` : '';
     void subagentsTotal; // kept on the prop for possible future detail-view use
-    const turnsText =
+    const progressText =
       turns > 0
         ? subsLabel
           ? `${turns}t · ${subsLabel}`
           : `${turns}t`
         : '';
-    const stateBudget = innerWidth - 4 /* both edges + spinner */ - turnsText.length;
+    const pct = contextPct(cell);
+    const rawCtxText = pct == null ? '' : `${progressText ? ' · ' : ''}ctx ${pct}%`;
+    const canFitCtx = rawCtxText
+      ? innerWidth - 4 - progressText.length - rawCtxText.length >= 8
+      : false;
+    const ctxText = canFitCtx ? rawCtxText : '';
+    const progressWidth = progressText.length + ctxText.length;
+    const stateBudget = innerWidth - 4 /* both edges + spinner */ - progressWidth;
     const stateRendered = truncate(stateText, Math.max(3, stateBudget));
     const padRight = Math.max(
       0,
-      innerWidth - 4 - stateRendered.length - turnsText.length,
+      innerWidth - 4 - stateRendered.length - progressWidth,
     );
 
     // --- bottom border ---
     const bottomLine = `${glyphs.bl}${glyphs.h.repeat(innerWidth)}${glyphs.br}`;
+    const ctxColor = pct == null ? undefined : pct >= 85 ? 'red' : pct >= 60 ? 'yellow' : undefined;
+    const ctxBold = pct != null && pct >= 85;
 
     return (
       <Box flexDirection="column" width={width} marginRight={1}>
@@ -171,7 +187,12 @@ export const SessionCompact = React.memo(
           )}
           <Text color={color} bold={state === 'permission'} dimColor={dim}>{stateRendered}</Text>
           <Text>{' '.repeat(padRight)}</Text>
-          {turnsText ? <Text dimColor>{turnsText}</Text> : null}
+          {progressText ? <Text dimColor>{progressText}</Text> : null}
+          {ctxText ? (
+            <Text color={ctxColor} bold={ctxBold} dimColor={pct != null && pct < 60}>
+              {ctxText}
+            </Text>
+          ) : null}
           <Text> </Text>
           <Text color={color} bold={focused} dimColor={dim}>{glyphs.v}</Text>
         </Box>

@@ -89,8 +89,26 @@ function asObject(v: unknown): Json | null {
 function asString(v: unknown): string | null {
   return typeof v === 'string' ? v : null;
 }
+function asNumber(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
 function asArray(v: unknown): unknown[] | null {
   return Array.isArray(v) ? v : null;
+}
+
+const CLAUDE_CONTEXT_WINDOWS: Record<string, number> = {
+  'claude-opus-4-7[1m]': 1_000_000,
+  'claude-opus-4-7': 200_000,
+  'claude-opus-4-6[1m]': 1_000_000,
+  'claude-opus-4-6': 200_000,
+  'claude-sonnet-4-6[1m]': 1_000_000,
+  'claude-sonnet-4-6': 200_000,
+  'claude-haiku-4-5-20251001': 200_000,
+};
+
+function lookupClaudeWindow(model: string | null): number {
+  if (!model) return 200_000;
+  return CLAUDE_CONTEXT_WINDOWS[model] ?? 200_000;
 }
 
 // Pull the assistant's first tool_use block name from `message.content[]`.
@@ -138,6 +156,18 @@ function extractModel(line: Json): string | null {
   return asString(msg.model);
 }
 
+function extractContextTokensUsed(line: Json): number | null {
+  const msg = asObject(line.message);
+  const usage = msg ? asObject(msg.usage) : null;
+  if (!usage) return null;
+  return (
+    asNumber(usage.input_tokens) +
+    asNumber(usage.cache_creation_input_tokens) +
+    asNumber(usage.cache_read_input_tokens) +
+    asNumber(usage.output_tokens)
+  );
+}
+
 // Truncate prompt for last_prompt column (mirrors state-machine's helper but we
 // don't want to import a private function). 200 chars, whitespace-squashed.
 function summarizePrompt(prompt: string): string {
@@ -148,7 +178,7 @@ function summarizePrompt(prompt: string): string {
 // --- normalizer --------------------------------------------------------------
 
 interface NormalizedRollout {
-  kind: NormalizedEventKind;
+  kind: NormalizedEventKind | null;
   sessionId: string;
   transcriptPath: string;
   cwd: string | null;
@@ -158,6 +188,9 @@ interface NormalizedRollout {
   userPrompt: string | null;
   providerTs: string | null;
   observedAtMs: number;
+  contextTokensUsed: number | null;
+  contextTokensMax: number | null;
+  contextSource: 'model_lookup' | null;
 }
 
 // Subagent rollouts live at `<parent>/subagents/agent-<aid>.jsonl`. Each line
@@ -205,6 +238,10 @@ function normalizeClaudeLine(
   let kind: NormalizedEventKind | null = null;
   let toolName: string | null = null;
   let userPrompt: string | null = null;
+  const model = extractModel(line);
+  let contextTokensUsed: number | null = null;
+  let contextTokensMax: number | null = null;
+  let contextSource: 'model_lookup' | null = null;
 
   switch (type) {
     case 'user': {
@@ -220,13 +257,23 @@ function normalizeClaudeLine(
     case 'assistant': {
       const msg = asObject(line.message);
       const stopReason = msg ? asString(msg.stop_reason) : null;
+      contextTokensUsed = extractContextTokensUsed(line);
+      if (contextTokensUsed != null) {
+        // The rollout's model field does NOT signal the [1m] (1M-context)
+        // variant — both regular and 1M opus log as `claude-opus-4-7`. So the
+        // model_lookup table can under-report the real window. Auto-grow max
+        // to whichever is larger of (lookup, observed_used). The display
+        // layer caps the percentage at 99 so we never show >100%.
+        contextTokensMax = Math.max(lookupClaudeWindow(model), contextTokensUsed);
+        contextSource = 'model_lookup';
+      }
       if (stopReason === 'tool_use') {
         kind = 'tool_call_start';
         toolName = extractToolName(line);
       } else {
-        // Plain assistant text (`end_turn` / null). Not a lifecycle marker --
-        // the state machine derives `thinking` from `user_prompt`.
-        return null;
+        // Plain assistant text (`end_turn` / null) is metadata-only when usage
+        // is present; otherwise it is not a lifecycle marker.
+        if (contextTokensUsed == null) return null;
       }
       break;
     }
@@ -258,12 +305,15 @@ function normalizeClaudeLine(
     sessionId,
     transcriptPath: filePath,
     cwd: cwd,
-    model: extractModel(line),
+    model,
     cliVersion: cliVersion,
     toolName,
     userPrompt,
     providerTs,
     observedAtMs: observed,
+    contextTokensUsed,
+    contextTokensMax,
+    contextSource,
   };
 }
 
@@ -280,6 +330,30 @@ function persist(
 ): void {
   const key = sessionKey('claude', norm.sessionId, norm.transcriptPath);
   const prev: SessionRow | null = getSessionByKey(key);
+
+  if (norm.kind == null) {
+    const upsert: SessionUpsert = {
+      key,
+      provider: 'claude',
+      session_id: norm.sessionId,
+      observed_at_ms: norm.observedAtMs,
+      state: prev?.state ?? 'waiting',
+      transcript_path: norm.transcriptPath,
+      cwd: norm.cwd,
+      model: norm.model,
+      cli_version: norm.cliVersion,
+      pid: null,
+      process_start_unix: null,
+      prior_state: prev?.prior_state ?? null,
+      current_tool: prev?.current_tool ?? null,
+      last_prompt: null,
+      context_tokens_used: norm.contextTokensUsed,
+      context_tokens_max: norm.contextTokensMax,
+      context_source: norm.contextSource,
+    };
+    upsertSession(upsert);
+    return;
+  }
 
   // Build the canonical event first; the state machine consumes it as-is.
   const event: NormalizedEvent = {
@@ -321,6 +395,9 @@ function persist(
     current_tool:
       'current_tool' in patch ? patch.current_tool ?? null : prev?.current_tool ?? null,
     last_prompt: norm.userPrompt ? summarizePrompt(norm.userPrompt) : null,
+    context_tokens_used: norm.contextTokensUsed,
+    context_tokens_max: norm.contextTokensMax,
+    context_source: norm.contextSource,
   };
 
   upsertSession(upsert);
@@ -409,7 +486,8 @@ async function drainFile(
 
     try {
       persist(norm, filePath, recordOffsetInFile, trimmed);
-      ingested++;
+      if (norm.kind == null) skipped++;
+      else ingested++;
     } catch (e) {
       log(
         `reconciler/claude: persist error in ${filePath} @ ${recordOffsetInFile}: ${(e as Error).message}`,

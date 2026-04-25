@@ -60,6 +60,15 @@ function applyMigrations(database: Database): void {
   if (!have.has('origin')) {
     database.exec('ALTER TABLE sessions ADD COLUMN origin TEXT');
   }
+  if (!have.has('context_tokens_used')) {
+    database.exec('ALTER TABLE sessions ADD COLUMN context_tokens_used INTEGER');
+  }
+  if (!have.has('context_tokens_max')) {
+    database.exec('ALTER TABLE sessions ADD COLUMN context_tokens_max INTEGER');
+  }
+  if (!have.has('context_source')) {
+    database.exec('ALTER TABLE sessions ADD COLUMN context_source TEXT');
+  }
 }
 
 // Default lazy accessor. If we already have a handle (from a previous

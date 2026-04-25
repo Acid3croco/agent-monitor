@@ -41,6 +41,9 @@ function row(over: Partial<SessionRow>): SessionRow {
     last_prompt: null,
     observed_parent_pid: null,
     origin: null,
+    context_tokens_used: null,
+    context_tokens_max: null,
+    context_source: null,
     ...over,
   };
 }
@@ -50,6 +53,7 @@ function resetStore(): void {
     sessions: new Map(),
     order: [],
     mode: 'grid',
+    previousMode: 'grid',
     focusedKey: null,
     filter: '',
     filterMode: false,
@@ -177,6 +181,10 @@ describe('handleGridKey', () => {
   test('unknown keys are no-op', () => {
     expect(handleGridKey('z', {})).toEqual({ type: 'none' });
   });
+
+  test('? toggles help', () => {
+    expect(handleGridKey('?', {})).toEqual({ type: 'toggle-help' });
+  });
 });
 
 describe('handleDetailKey', () => {
@@ -192,6 +200,10 @@ describe('handleDetailKey', () => {
   test('q quits', () => {
     expect(handleDetailKey('q', {})).toEqual({ type: 'quit' });
     expect(handleDetailKey('c', { ctrl: true })).toEqual({ type: 'quit' });
+  });
+
+  test('? toggles help', () => {
+    expect(handleDetailKey('?', {})).toEqual({ type: 'toggle-help' });
   });
 });
 
@@ -256,27 +268,37 @@ describe('store.density', () => {
 
 describe('applyActionToStore (pure dispatch helper)', () => {
   test('quit sets quit flag', () => {
-    const s = { mode: 'grid' as const, focusedKey: null, filter: '', filterMode: false, eventScroll: 0 };
+    const s = { mode: 'grid' as const, previousMode: 'grid' as const, focusedKey: null, filter: '', filterMode: false, eventScroll: 0 };
     expect(applyActionToStore(s, { type: 'quit' }).quit).toBe(true);
   });
 
   test('open-detail flips mode', () => {
-    const s = { mode: 'grid' as const, focusedKey: 'k', filter: '', filterMode: false, eventScroll: 5 };
+    const s = { mode: 'grid' as const, previousMode: 'grid' as const, focusedKey: 'k', filter: '', filterMode: false, eventScroll: 5 };
     const r = applyActionToStore(s, { type: 'open-detail' });
     expect(r.mode).toBe('detail');
     expect(r.eventScroll).toBe(0);
   });
 
   test('clear-filter resets filter and exits filter mode', () => {
-    const s = { mode: 'grid' as const, focusedKey: null, filter: 'hi', filterMode: true, eventScroll: 0 };
+    const s = { mode: 'grid' as const, previousMode: 'grid' as const, focusedKey: null, filter: 'hi', filterMode: true, eventScroll: 0 };
     const r = applyActionToStore(s, { type: 'clear-filter' });
     expect(r.filter).toBe('');
     expect(r.filterMode).toBe(false);
   });
 
   test('scroll-events clamps at zero', () => {
-    const s = { mode: 'detail' as const, focusedKey: 'k', filter: '', filterMode: false, eventScroll: 0 };
+    const s = { mode: 'detail' as const, previousMode: 'detail' as const, focusedKey: 'k', filter: '', filterMode: false, eventScroll: 0 };
     const r = applyActionToStore(s, { type: 'scroll-events', delta: -5 });
     expect(r.eventScroll).toBe(0);
+  });
+
+  test('help mode toggles back to previous mode', () => {
+    const s = { mode: 'grid' as const, previousMode: 'grid' as const, focusedKey: null, filter: '', filterMode: false, eventScroll: 0 };
+    const help = applyActionToStore(s, { type: 'toggle-help' });
+    expect(help.mode).toBe('help');
+    expect(help.previousMode).toBe('grid');
+
+    const back = applyActionToStore(help, { type: 'toggle-help' });
+    expect(back.mode).toBe('grid');
   });
 });

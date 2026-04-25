@@ -26,6 +26,9 @@ function row(over: Partial<SessionRow>): SessionRow {
     last_prompt: null,
     observed_parent_pid: null,
     origin: null,
+    context_tokens_used: null,
+    context_tokens_max: null,
+    context_source: null,
     ...over,
   };
 }

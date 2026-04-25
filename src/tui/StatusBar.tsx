@@ -38,8 +38,9 @@ function tally(
 }
 
 const KEYMAP_GRID =
-  '[d]ensity [a]ll [m]cp [c]opy-resume [/]filter [r]econcile [enter]detail [q]uit';
-const KEYMAP_DETAIL = '[esc]back [j/k]scroll [q]uit';
+  '[?]help [d]ensity [a]ll [m]cp [c]opy-resume [/]filter [r]econcile [enter]detail [q]uit';
+const KEYMAP_DETAIL = '[?]help [esc]back [j/k]scroll [q]uit';
+const KEYMAP_HELP = '[esc/?]back [q]uit';
 
 export function StatusBar({ nowMs }: { nowMs: number }): React.ReactElement {
   // useStdout subscription isn't strictly needed here, but reading it makes
@@ -68,7 +69,7 @@ export function StatusBar({ nowMs }: { nowMs: number }): React.ReactElement {
   const counts = tally(filtered, nowMs);
 
   // Keymap line: in filter-edit mode the input replaces the keymap.
-  const keymap = mode === 'grid' ? KEYMAP_GRID : KEYMAP_DETAIL;
+  const keymap = mode === 'grid' ? KEYMAP_GRID : mode === 'detail' ? KEYMAP_DETAIL : KEYMAP_HELP;
 
   // We render the bar in a flex box so the keymap right-aligns. When the
   // terminal is too narrow to fit both, the keymap wraps below — flex layout

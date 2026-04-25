@@ -127,6 +127,18 @@ function isSubagent(transcriptPath: string | null): boolean {
   return transcriptPath ? transcriptPath.includes('/subagents/') : false;
 }
 
+function parentSidFromPath(transcriptPath: string | null): string | null {
+  const m = transcriptPath?.match(/\/([0-9a-f-]{36})\/subagents\/agent-/);
+  return m ? m[1]!.slice(0, 8) : null;
+}
+
+function contextPct(cell: SessionRow): number | null {
+  const used = cell.context_tokens_used;
+  const max = cell.context_tokens_max;
+  if (used == null || max == null || max <= 0) return null;
+  return Math.min(99, Math.floor((used / max) * 100));
+}
+
 // --- component -------------------------------------------------------------
 
 export interface SessionCardProps {
@@ -182,12 +194,15 @@ export const SessionCard = React.memo(
     // not shown — the user only cares which subagents are working *now*.
     const subsLabel = subagentsActive > 0 ? `${subagentsActive} subs` : '';
     void subagentsTotal; // kept on the prop for possible future detail-view use
-    const turnsText =
+    const progressText =
       turns > 0
         ? subsLabel
           ? `${turns}t · ${subsLabel}`
           : `${turns}t`
         : '';
+    const pct = contextPct(cell);
+    const ctxText = pct == null ? '' : `${progressText ? ' · ' : ''}ctx ${pct}%`;
+    const progressWidth = progressText.length + ctxText.length;
     const stateText = stateLabel(state, cell.current_tool);
 
     // line 2 layout (between │ and │):
@@ -195,11 +210,11 @@ export const SessionCard = React.memo(
     // turnsText is rendered as-is (no trailing space). Both edges get an
     // explicit 1-char pad so the right border aligns with line 3 and the
     // bottom border regardless of whether turns is shown.
-    const stateBudget = innerWidth - 4 /* both edge pads + spinner col */ - turnsText.length;
+    const stateBudget = innerWidth - 4 /* both edge pads + spinner col */ - progressWidth;
     const stateRendered = truncate(stateText, Math.max(3, stateBudget));
     const line2Pad = Math.max(
       0,
-      innerWidth - 4 - stateRendered.length - turnsText.length,
+      innerWidth - 4 - stateRendered.length - progressWidth,
     );
 
     // --- line 3: prompt preview ---
@@ -216,7 +231,18 @@ export const SessionCard = React.memo(
     const sidShort = cell.session_id ? cell.session_id.slice(0, 8) : '?';
     const sidLabel = `sid:${sidShort}`;
     const sidPad = Math.max(1, innerWidth - 4 - sidLabel.length);
-    const bottomLine = `${glyphs.bl}${glyphs.h.repeat(sidPad)} ${sidLabel} ${glyphs.h.repeat(2)}${glyphs.br}`;
+    const defaultBottomLine = `${glyphs.bl}${glyphs.h.repeat(sidPad)} ${sidLabel} ${glyphs.h.repeat(2)}${glyphs.br}`;
+    const parentSid = isSub ? parentSidFromPath(cell.transcript_path) : null;
+    const parentPrefix = parentSid ? `${glyphs.h.repeat(2)} ↳ ${parentSid} ` : '';
+    const parentPad = parentSid
+      ? innerWidth - parentPrefix.length - 1 - sidLabel.length - 1 - 2
+      : -1;
+    const bottomLine =
+      parentSid && parentPad >= 1
+        ? `${glyphs.bl}${parentPrefix}${glyphs.h.repeat(parentPad)} ${sidLabel} ${glyphs.h.repeat(2)}${glyphs.br}`
+        : defaultBottomLine;
+    const ctxColor = pct == null ? undefined : pct >= 85 ? 'red' : pct >= 60 ? 'yellow' : undefined;
+    const ctxBold = pct != null && pct >= 85;
 
     return (
       <Box flexDirection="column" width={width} marginRight={1}>
@@ -237,7 +263,12 @@ export const SessionCard = React.memo(
           )}
           <Text color={color} bold={state === 'permission'} dimColor={dim}>{stateRendered}</Text>
           <Text>{' '.repeat(line2Pad)}</Text>
-          {turnsText ? <Text dimColor>{turnsText}</Text> : null}
+          {progressText ? <Text dimColor>{progressText}</Text> : null}
+          {ctxText ? (
+            <Text color={ctxColor} bold={ctxBold} dimColor={pct != null && pct < 60}>
+              {ctxText}
+            </Text>
+          ) : null}
           <Text> </Text>
           <Text color={color} bold={focused} dimColor={dim}>{glyphs.v}</Text>
         </Box>

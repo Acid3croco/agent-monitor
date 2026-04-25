@@ -28,17 +28,22 @@ export interface SessionUpsert {
   last_prompt?: string | null;
   observed_parent_pid?: number | null;
   origin?: string | null;
+  context_tokens_used?: number | null;
+  context_tokens_max?: number | null;
+  context_source?: SessionRow['context_source'];
 }
 
 const SQL_UPSERT_SESSION = `
 INSERT INTO sessions (
   key, provider, session_id, transcript_path, cwd, model, cli_version,
   pid, process_start_unix, started_at_ms, last_event_at_ms,
-  prior_state, state, current_tool, last_prompt, observed_parent_pid, origin
+  prior_state, state, current_tool, last_prompt, observed_parent_pid, origin,
+  context_tokens_used, context_tokens_max, context_source
 ) VALUES (
   $key, $provider, $session_id, $transcript_path, $cwd, $model, $cli_version,
   $pid, $process_start_unix, $observed_at_ms, $observed_at_ms,
-  $prior_state, $state, $current_tool, $last_prompt, $observed_parent_pid, $origin
+  $prior_state, $state, $current_tool, $last_prompt, $observed_parent_pid, $origin,
+  $context_tokens_used, $context_tokens_max, $context_source
 )
 ON CONFLICT(key) DO UPDATE SET
   transcript_path     = COALESCE(excluded.transcript_path, sessions.transcript_path),
@@ -53,7 +58,10 @@ ON CONFLICT(key) DO UPDATE SET
   current_tool        = excluded.current_tool,
   last_prompt         = COALESCE(excluded.last_prompt,     sessions.last_prompt),
   observed_parent_pid = COALESCE(excluded.observed_parent_pid, sessions.observed_parent_pid),
-  origin              = COALESCE(excluded.origin,          sessions.origin)
+  origin              = COALESCE(excluded.origin,          sessions.origin),
+  context_tokens_used = COALESCE(excluded.context_tokens_used, sessions.context_tokens_used),
+  context_tokens_max  = COALESCE(excluded.context_tokens_max,  sessions.context_tokens_max),
+  context_source      = COALESCE(excluded.context_source,      sessions.context_source)
 `;
 
 export function upsertSession(row: SessionUpsert): void {
@@ -74,6 +82,9 @@ export function upsertSession(row: SessionUpsert): void {
     $last_prompt: row.last_prompt ?? null,
     $observed_parent_pid: row.observed_parent_pid ?? null,
     $origin: row.origin ?? null,
+    $context_tokens_used: row.context_tokens_used ?? null,
+    $context_tokens_max: row.context_tokens_max ?? null,
+    $context_source: row.context_source ?? null,
   });
 }
 

@@ -20,10 +20,12 @@
 //   ctrl-d        scroll half-page down
 //   ctrl-u        scroll half-page up
 //   r             force reconcile (handled at App level)
+//   ?             open help
 //   q | ctrl-c    quit
 //
 // Bindings (detail mode):
 //   esc           back to grid
+//   ?             open help
 //   j / down      scroll events down
 //   k / up        scroll events up
 //   q | ctrl-c    quit
@@ -57,6 +59,7 @@ export type Action =
   | { type: 'cycle-density' }
   | { type: 'copy-resume' }
   | { type: 'reconcile' }
+  | { type: 'toggle-help' }
   | { type: 'move-focus'; dx: -1 | 0 | 1; dy: -1 | 0 | 1 }
   | { type: 'jump-focus'; to: 'top' | 'bottom' }
   | { type: 'scroll-events'; delta: number }
@@ -110,6 +113,7 @@ export function handleGridKey(input: string, key: KeyEvent): Action {
   if (input === 'd') return { type: 'cycle-density' };
   if (input === 'c') return { type: 'copy-resume' };
   if (input === 'r') return { type: 'reconcile' };
+  if (input === '?') return { type: 'toggle-help' };
   if (input === 'j' || key.downArrow) return { type: 'move-focus', dx: 0, dy: 1 };
   if (input === 'k' || key.upArrow) return { type: 'move-focus', dx: 0, dy: -1 };
   if (input === 'h' || key.leftArrow) return { type: 'move-focus', dx: -1, dy: 0 };
@@ -120,6 +124,7 @@ export function handleGridKey(input: string, key: KeyEvent): Action {
 export function handleDetailKey(input: string, key: KeyEvent): Action {
   if (key.ctrl && input === 'c') return { type: 'quit' };
   if (input === 'q') return { type: 'quit' };
+  if (input === '?') return { type: 'toggle-help' };
   if (key.escape) return { type: 'back-to-grid' };
   if (input === 'j' || key.downArrow) return { type: 'scroll-events', delta: 1 };
   if (input === 'k' || key.upArrow) return { type: 'scroll-events', delta: -1 };
@@ -130,7 +135,7 @@ export function handleDetailKey(input: string, key: KeyEvent): Action {
 // without standing up React. The App component implements its own dispatch
 // because some actions are async (reconcile) or affect ink state (quit).
 export function applyActionToStore(
-  state: Pick<TuiState, 'mode' | 'focusedKey' | 'filter' | 'filterMode' | 'eventScroll'>,
+  state: Pick<TuiState, 'mode' | 'previousMode' | 'focusedKey' | 'filter' | 'filterMode' | 'eventScroll'>,
   action: Action,
 ): typeof state & { quit?: boolean } {
   switch (action.type) {
@@ -156,6 +161,10 @@ export function applyActionToStore(
       return state; // App owns the side effect; pure helper just acks
     case 'reconcile':
       return state;
+    case 'toggle-help':
+      return state.mode === 'help'
+        ? { ...state, mode: state.previousMode, eventScroll: 0 }
+        : { ...state, previousMode: state.mode, mode: 'help', eventScroll: 0 };
     case 'move-focus':
       return state; // requires visible-list context, handled at App level
     case 'jump-focus':

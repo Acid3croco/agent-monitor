@@ -81,6 +81,9 @@ function asObject(v: unknown): Json | null {
 function asString(v: unknown): string | null {
   return typeof v === 'string' ? v : null;
 }
+function asNumber(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
 
 function summarizePrompt(prompt: string): string {
   const flat = prompt.replace(/\s+/g, ' ').trim();
@@ -115,6 +118,9 @@ interface NormalizedRollout {
   // distinguish human-driven sessions from MCP-spawned children. Only set on
   // the session_meta line; metadata-only callsites pass null.
   origin: string | null;
+  contextTokensUsed?: number | null;
+  contextTokensMax?: number | null;
+  contextSource?: 'reported' | null;
 }
 
 // Pull metadata-only fields off a turn_context line. Returns null when there's
@@ -196,6 +202,31 @@ function normalizeCodexLine(
             origin: null,
           };
         }
+        case 'token_count': {
+          // `total_token_usage` is CUMULATIVE across the session — for a long
+          // codex thread that runs for hours, total_tokens far exceeds the
+          // context window. The actual current context size is in
+          // `last_token_usage.total_tokens` — the last turn's request.
+          const info = asObject(payload.info);
+          const last = info ? asObject(info.last_token_usage) : null;
+          const used = last ? asNumber(last.total_tokens) : null;
+          const max = info ? asNumber(info.model_context_window) : null;
+          if (used == null && max == null) return null;
+          return {
+            kind: null,
+            cwd: null,
+            model: null,
+            cliVersion: null,
+            toolName: null,
+            userPrompt: null,
+            providerTs,
+            observedAtMs: observed,
+            origin: null,
+            contextTokensUsed: used,
+            contextTokensMax: max,
+            contextSource: 'reported',
+          };
+        }
         case 'task_complete': {
           return {
             kind: 'turn_complete',
@@ -210,7 +241,7 @@ function normalizeCodexLine(
           };
         }
         // Ignored: task_started (we derive thinking from user_prompt),
-        // agent_message (text), token_count, web_search_*, etc.
+        // agent_message (text), web_search_*, etc.
         default:
           return null;
       }
@@ -319,6 +350,9 @@ function persistEvent(
       'current_tool' in patch ? patch.current_tool ?? null : prev?.current_tool ?? null,
     last_prompt: norm.userPrompt ? summarizePrompt(norm.userPrompt) : null,
     origin: norm.origin,
+    context_tokens_used: norm.contextTokensUsed,
+    context_tokens_max: norm.contextTokensMax,
+    context_source: norm.contextSource,
   };
 
   upsertSession(upsert);
@@ -338,7 +372,13 @@ function persistMetadataOnly(
   if (!prev) return; // no session row yet -- nothing to patch onto.
 
   // Only push fields if at least one meaningful field is set; saves a write.
-  if (!norm.cwd && !norm.model && !norm.cliVersion) return;
+  if (
+    !norm.cwd &&
+    !norm.model &&
+    !norm.cliVersion &&
+    norm.contextTokensUsed == null &&
+    norm.contextTokensMax == null
+  ) return;
 
   const upsert: SessionUpsert = {
     key,
@@ -355,6 +395,9 @@ function persistMetadataOnly(
     prior_state: prev.prior_state,
     current_tool: prev.current_tool,
     last_prompt: null,
+    context_tokens_used: norm.contextTokensUsed,
+    context_tokens_max: norm.contextTokensMax,
+    context_source: norm.contextSource,
   };
   upsertSession(upsert);
 }

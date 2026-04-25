@@ -17,7 +17,7 @@ import { applyLiveness } from '../liveness.ts';
 import type { SessionStats } from '../store/queries.ts';
 import type { EventRow, SessionRow } from '../types.ts';
 
-export type Mode = 'grid' | 'detail';
+export type Mode = 'grid' | 'detail' | 'help';
 export type Density = 'card' | 'compact' | 'row';
 
 // Cycle order for the `d` key. Card is the v1.1 default; row is the legacy
@@ -31,6 +31,7 @@ export interface TuiState {
 
   // ui
   mode: Mode;
+  previousMode: Exclude<Mode, 'help'>;
   focusedKey: string | null;
   filter: string;
   filterMode: boolean; // true while user is editing the filter text
@@ -76,7 +77,10 @@ function rowEqual(a: SessionRow, b: SessionRow): boolean {
     a.cwd === b.cwd &&
     a.last_prompt === b.last_prompt &&
     a.provider === b.provider &&
-    a.model === b.model
+    a.model === b.model &&
+    a.context_tokens_used === b.context_tokens_used &&
+    a.context_tokens_max === b.context_tokens_max &&
+    a.context_source === b.context_source
   );
 }
 
@@ -84,6 +88,7 @@ export const useStore = create<TuiState>((set, get) => ({
   sessions: new Map(),
   order: [],
   mode: 'grid',
+  previousMode: 'grid',
   focusedKey: null,
   filter: '',
   filterMode: false,
@@ -151,7 +156,18 @@ export const useStore = create<TuiState>((set, get) => ({
   },
 
   setFocusedKey: (key) => set({ focusedKey: key }),
-  setMode: (mode) => set({ mode, eventScroll: 0 }),
+  setMode: (mode) => {
+    const cur = get();
+    if (mode === 'help') {
+      if (cur.mode === 'help') {
+        set({ mode: cur.previousMode, eventScroll: 0 });
+        return;
+      }
+      set({ mode: 'help', previousMode: cur.mode, eventScroll: 0 });
+      return;
+    }
+    set({ mode, previousMode: mode, eventScroll: 0 });
+  },
   setFilter: (s) => set({ filter: s }),
   setFilterMode: (on) => set({ filterMode: on }),
   setShowAll: (on) => set({ showAll: on }),

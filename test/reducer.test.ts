@@ -81,6 +81,9 @@ function makeStore() {
       observed_parent_pid:
         patch.observed_parent_pid ?? existing?.observed_parent_pid ?? null,
       origin: existing?.origin ?? null,
+      context_tokens_used: existing?.context_tokens_used ?? null,
+      context_tokens_max: existing?.context_tokens_max ?? null,
+      context_source: existing?.context_source ?? null,
     };
     sessions.set(patch.key, merged);
   }
@@ -244,7 +247,10 @@ describe('reducer: session_resume on existing key', () => {
       current_tool: null,
       last_prompt: null,
       observed_parent_pid: null,
-    origin: null,
+      origin: null,
+      context_tokens_used: null,
+      context_tokens_max: null,
+      context_source: null,
     };
     const second = reduce(env, '/tmp/x.jsonl', 100, {
       lookup: () => fakeRow,

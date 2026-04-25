@@ -89,6 +89,11 @@ export interface SessionRow {
   // 'exec' (one-shot codex exec), 'mcp' (spawned by another agent via MCP).
   // null when unknown (Claude sessions or pre-migration rows).
   origin: string | null;
+  // Current context load, not lifetime tokens. Source is either provider-
+  // reported (Codex) or inferred from the model table (Claude).
+  context_tokens_used: number | null;
+  context_tokens_max: number | null;
+  context_source: 'reported' | 'model_lookup' | null;
 }
 
 // SQLite events row (after insert; id is auto-assigned).

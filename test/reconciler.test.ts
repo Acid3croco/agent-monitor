@@ -97,7 +97,8 @@ describe('reconciler: full rollout ingest', () => {
     //    tool_use, 1x last-prompt. Mapped: 1 user_prompt, 1 tool_call_start,
     //    1 turn_complete = 3 events.
     //  - Codex fixture has 10 lines: ignored=task_started, agent_message,
-    //    token_count, reasoning, turn_context (metadata-only). Mapped:
+    //    reasoning, turn_context (metadata-only), token_count (metadata-only).
+    //    Mapped:
     //    1 session_start, 1 user_prompt, 1 function_call (tool_call_start),
     //    1 function_call_output (tool_call_end), 1 task_complete = 5 events.
     const db = openDb(active.dbPath);
@@ -142,6 +143,28 @@ describe('reconciler: full rollout ingest', () => {
     expect(sessions.find((s) => s.provider === 'codex')?.cwd).toBe(
       '/home/jack/projects/tui',
     );
+
+    const contextRows = db
+      .query<
+        { provider: string; used: number | null; max: number | null; src: string | null },
+        []
+      >(
+        `SELECT provider,
+                context_tokens_used AS used,
+                context_tokens_max AS max,
+                context_source AS src
+           FROM sessions ORDER BY provider`,
+      )
+      .all();
+    const claudeCtx = contextRows.find((r) => r.provider === 'claude');
+    expect(claudeCtx?.used).toBe(2);
+    expect(claudeCtx?.max).toBe(200_000);
+    expect(claudeCtx?.src).toBe('model_lookup');
+
+    const codexCtx = contextRows.find((r) => r.provider === 'codex');
+    expect(codexCtx?.used).toBe(2);
+    expect(codexCtx?.max).toBe(258_400);
+    expect(codexCtx?.src).toBe('reported');
   });
 
   test('re-running the reconciler is idempotent', async () => {

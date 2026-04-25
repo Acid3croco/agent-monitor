@@ -13,6 +13,20 @@ function fmtTs(ms: number): string {
   return d.toISOString().replace('T', ' ').slice(0, 19);
 }
 
+function fmtTokens(n: number): string {
+  if (n >= 1000) return `${Math.round(n / 1000)}k`;
+  return String(n);
+}
+
+function fmtContext(used: number | null, max: number | null): string {
+  if (used != null && max != null && max > 0) {
+    const pct = Math.floor((used / max) * 100);
+    return `${fmtTokens(used)} / ${fmtTokens(max)} · ${pct}%`;
+  }
+  if (used != null) return `${fmtTokens(used)} tokens`;
+  return '(unknown)';
+}
+
 function extractToolName(ev: EventRow): string | null {
   if (!ev.payload_json) return null;
   try {
@@ -87,6 +101,10 @@ export function Detail(): React.ReactElement {
         <Field label="provider" value={session.provider} />
         <Field label="session_id" value={session.session_id} />
         <Field label="model" value={session.model} />
+        <Field
+          label="context"
+          value={fmtContext(session.context_tokens_used, session.context_tokens_max)}
+        />
         <Field label="cli_version" value={session.cli_version} />
         <Field label="cwd" value={session.cwd} />
         <Field label="transcript" value={session.transcript_path} />

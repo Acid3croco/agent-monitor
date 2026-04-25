@@ -30,6 +30,7 @@ import type { Database } from 'bun:sqlite';
 import { useStore, visibleKeys } from './store.ts';
 import { Grid } from './Grid.tsx';
 import { Detail } from './Detail.tsx';
+import { Help } from './Help.tsx';
 import { StatusBar } from './StatusBar.tsx';
 import {
   computeFocusAfterMove,
@@ -272,6 +273,23 @@ function App(): React.ReactElement {
         return;
       }
 
+      if (st.mode === 'help') {
+        if (key.ctrl && input === 'c') {
+          log('quit requested');
+          exit();
+          return;
+        }
+        if (input === 'q') {
+          log('quit requested');
+          exit();
+          return;
+        }
+        if (key.escape || input === '?') {
+          st.setMode('help');
+        }
+        return;
+      }
+
       // Vim-style chord: gg jumps focus to first cell, G jumps to last.
       // Process in grid mode only — detail mode reserves j/k for event scroll.
       if (st.mode === 'grid') {
@@ -358,6 +376,9 @@ function App(): React.ReactElement {
             .finally(() => {
               reconcileRunning.current = false;
             });
+          return;
+        case 'toggle-help':
+          st.setMode('help');
           return;
         case 'toggle-show-all':
           st.setShowAll(!st.showAll);
@@ -480,7 +501,9 @@ function App(): React.ReactElement {
       <StatusBar nowMs={nowMs} />
       <AmbientFooter status={ambient} nowMs={nowMs} />
       {toast ? <Text color="green">{toast}</Text> : null}
-      <Box marginTop={1}>{mode === 'grid' ? <Grid /> : <Detail />}</Box>
+      <Box marginTop={1}>
+        {mode === 'grid' ? <Grid /> : mode === 'detail' ? <Detail /> : <Help />}
+      </Box>
     </Box>
   );
 }

@@ -20,7 +20,11 @@ CREATE TABLE IF NOT EXISTS sessions (
   state                    TEXT NOT NULL,       -- derived; see state-machine.ts
   current_tool             TEXT,                -- when state='tool'
   last_prompt              TEXT,                -- truncated last user prompt, for display
-  observed_parent_pid      INTEGER              -- $PPID of the hook process; diagnostic only (M6)
+  observed_parent_pid      INTEGER,             -- $PPID of the hook process; diagnostic only (M6)
+  origin                   TEXT,                -- codex session_meta source: 'cli' | 'exec' | 'mcp'
+  context_tokens_used      INTEGER,             -- current context load, not lifetime
+  context_tokens_max       INTEGER,
+  context_source           TEXT                 -- 'reported' | 'model_lookup'
 );
 
 CREATE TABLE IF NOT EXISTS events (
