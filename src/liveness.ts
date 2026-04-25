@@ -67,6 +67,10 @@ function refreshAliveCache(): void {
     return;
   }
 
+  // Match a UUID anywhere in the rest of a token list. Used for `--resume`
+  // arg parsing where the value may be the next argument in cmdline.
+  const UUID_TOKEN_RE = new RegExp(`^${UUID_RE_SRC}$`);
+
   for (const pid of pids) {
     if (!/^\d+$/.test(pid)) continue;
     let comm: string;
@@ -76,6 +80,24 @@ function refreshAliveCache(): void {
       continue;
     }
     if (comm !== 'claude' && comm !== 'codex') continue;
+
+    // Resumed sessions (`claude --resume <sid>` or `codex --resume <sid>`)
+    // don't create a new lock file and don't keep their rollout fd open
+    // persistently, so we'd miss them via the fd walk alone. Parse cmdline.
+    try {
+      const raw = readFileSync(`/proc/${pid}/cmdline`, 'utf-8');
+      const args = raw.split('\0');
+      for (let i = 0; i < args.length - 1; i++) {
+        if (args[i] === '--resume' && UUID_TOKEN_RE.test(args[i + 1] ?? '')) {
+          const sid = args[i + 1]!;
+          if (comm === 'claude') cache.claude.add(sid);
+          else cache.codex.add(sid);
+          break;
+        }
+      }
+    } catch {
+      // cmdline unreadable; fall through to fd walk.
+    }
 
     let fds: string[];
     try {
