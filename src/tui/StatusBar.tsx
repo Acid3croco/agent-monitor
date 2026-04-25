@@ -14,31 +14,25 @@ import { useStore, visibleKeys } from './store.ts';
 import { applyLiveness } from '../liveness.ts';
 
 interface Counts {
-  needs: number;
-  active: number;
-  idle: number;
-  stale: number;
-  done: number;
+  needs: number;    // permission_request — most urgent (red)
+  waiting: number;  // turn ended, awaiting user input — your move (yellow, prominent)
+  working: number;  // thinking / tool — agent is busy, no user action needed
+  idle: number;     // no events for >ACTIVE_WINDOW_MS but still alive
+  done: number;     // process gone
 }
 
 function tally(
   sessions: Map<string, import('../types.ts').SessionRow>,
   nowMs: number,
 ): Counts {
-  const c: Counts = { needs: 0, active: 0, idle: 0, stale: 0, done: 0 };
+  const c: Counts = { needs: 0, waiting: 0, working: 0, idle: 0, done: 0 };
   for (const r of sessions.values()) {
     const d = applyLiveness(r, nowMs);
-    if (d === 'permission') {
-      c.needs++;
-    } else if (d === 'thinking' || d === 'tool' || d === 'waiting') {
-      c.active++;
-    } else if (d === 'idle') {
-      c.idle++;
-    } else if (d === 'stale') {
-      c.stale++;
-    } else if (d === 'done') {
-      c.done++;
-    }
+    if (d === 'permission') c.needs++;
+    else if (d === 'waiting') c.waiting++;
+    else if (d === 'thinking' || d === 'tool') c.working++;
+    else if (d === 'idle') c.idle++;
+    else if (d === 'done') c.done++;
   }
   return c;
 }
@@ -85,6 +79,7 @@ export function StatusBar({ nowMs }: { nowMs: number }): React.ReactElement {
         <Text bold>agent-monitor</Text>
         <Text dimColor> · </Text>
         {filter ? <Text color="yellow">filtered </Text> : null}
+        {/* Permission requests — most urgent (red bold). */}
         {counts.needs > 0 ? (
           <Text color="red" bold>
             ⚠ {counts.needs} needs you
@@ -93,11 +88,22 @@ export function StatusBar({ nowMs }: { nowMs: number }): React.ReactElement {
           <Text dimColor>0 needs you</Text>
         )}
         <Text dimColor> · </Text>
-        <Text color={counts.active > 0 ? 'cyan' : undefined} dimColor={counts.active === 0}>
-          {counts.active} active
+        {/* Waiting — "your turn" signal. Prominent yellow when nonzero so
+            the user can spot it from the corner of their screen. */}
+        {counts.waiting > 0 ? (
+          <Text color="yellow" bold>
+            ⏵ {counts.waiting} waiting
+          </Text>
+        ) : (
+          <Text dimColor>0 waiting</Text>
+        )}
+        <Text dimColor> · </Text>
+        {/* Working — busy doing things; no user action needed. */}
+        <Text color={counts.working > 0 ? 'cyan' : undefined} dimColor={counts.working === 0}>
+          {counts.working} working
         </Text>
         <Text dimColor>
-          {' '}· {counts.idle} idle · {counts.stale} stale
+          {' '}· {counts.idle} idle
           {showAll ? ` · ${counts.done} done` : ''} · density={density}
         </Text>
       </Box>

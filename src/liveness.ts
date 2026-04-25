@@ -138,69 +138,47 @@ export function isCodexSessionAlive(sessionId: string): boolean {
 }
 
 // Tunables, exposed as constants for easy adjustment / test parameterization.
-// Times are in milliseconds.
-export const ACTIVE_WINDOW_MS = 30_000; // < 30s since last event: keep insert-time state as-is
-export const IDLE_SOFT_WINDOW_MS = 90_000; // 30-90s if was actively running: idle (soft)
-export const IDLE_HARD_WINDOW_MS = 600_000; // 90s-10min: still idle (soft); past that: stale
-
-// The set of insert-time states that count as "actively running" for the
-// idle-soft override. `waiting` is a turn-completed lull, not running.
-const ACTIVE_STATES: ReadonlySet<SessionState> = new Set<SessionState>([
-  'thinking',
-  'tool',
-  'waiting',
-  'permission',
-]);
+//
+// Two display buckets only:
+//   - DB state (THINKING / TOOL / WAITING / PERMISSION) when the last event
+//     is fresh (< 60 min);
+//   - IDLE when the session is alive (per /proc lock check) but quiet
+//     (>= 60 min since last event).
+//
+// DONE comes from the process-liveness check in applyLiveness, not from age:
+// a session whose claude/codex process has gone away is DONE regardless of
+// how recent the last event was. STALE used to be the "alive but very quiet"
+// fallback; we dropped it because the proc check makes it redundant.
+export const ACTIVE_WINDOW_MS = 60 * 60 * 1000; // 60 min — keep DB state as-is
 
 // Compute the display state for a row at a given wall-clock instant.
 //
 // Pure: no fs side effects. Production callers use `applyLiveness` (below)
-// which composes this with the authoritative lock-file check; tests use
-// this directly.
+// which composes this with the authoritative lock-file check.
 //
-// Logic (in order):
-//   - state === 'done'                -> 'done'   (terminal; never overridden)
-//   - now - last < 30s                -> state    (fresh enough; trust insert-time)
-//   - now - last < 90s and was active -> 'idle'   (active state that quieted)
-//   - now - last < 10min              -> 'idle'   (still soft; not stale yet)
-//   - else                             -> 'stale' (long-quiet, no Stop hook)
+// Logic:
+//   - state === 'done'                  -> 'done'  (terminal; never overridden)
+//   - now - last < ACTIVE_WINDOW_MS     -> state   (DB lifecycle value)
+//   - else                               -> 'idle' (alive but quiet)
+//
+// STALE used to be a long-quiet fallback; we dropped it since process-liveness
+// (in applyLiveness) authoritatively returns 'done' for dead processes. A
+// session is either live (state or idle) or dead (done).
 export function deriveDisplayState(row: SessionRow, nowMs: number): SessionState {
   if (row.state === 'done') return 'done';
-
   const age = nowMs - row.last_event_at_ms;
-
-  if (age < ACTIVE_WINDOW_MS) {
-    // Fresh: trust the state machine's lifecycle value.
-    return row.state;
-  }
-
-  if (age < IDLE_SOFT_WINDOW_MS && ACTIVE_STATES.has(row.state)) {
-    // Was actively running but no events for 30-90s. Soft idle.
-    return 'idle';
-  }
-
-  if (age < IDLE_HARD_WINDOW_MS) {
-    // Still under the stale threshold; show as idle regardless of insert-time state.
-    return 'idle';
-  }
-
-  return 'stale';
+  if (age < ACTIVE_WINDOW_MS) return row.state;
+  return 'idle';
 }
 
-// Production-side liveness: authoritative process-fd checks first (both
-// providers), then fall back to the event-age heuristic. Side-effecting
-// (walks /proc, cached for 3 s); tests should stick to deriveDisplayState.
-//
-// When a session is confirmed *alive* by /proc but its last event is older
-// than the IDLE_HARD threshold, the event-age heuristic would return `stale`
-// — which is wrong (we *know* it's running). Cap such cases at `idle`.
+// Production-side liveness: authoritative process-fd checks first; if no
+// claude/codex process holds the session's lock fd / rollout fd, the session
+// is DONE regardless of how recent its last event was. Side-effecting (walks
+// /proc, cached for 3 s); tests should stick to deriveDisplayState.
 export function applyLiveness(row: SessionRow, nowMs: number): SessionState {
   const proven =
     (row.provider === 'claude' && isClaudeSessionAlive(row.session_id)) ||
     (row.provider === 'codex' && isCodexSessionAlive(row.session_id));
-
   if (!proven) return 'done';
-
-  const derived = deriveDisplayState(row, nowMs);
-  return derived === 'stale' ? 'idle' : derived;
+  return deriveDisplayState(row, nowMs);
 }
