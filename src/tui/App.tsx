@@ -24,7 +24,7 @@ import {
 } from '../store/queries.ts';
 import { runReconcileOnce } from '../reconciler/index.ts';
 import { startAmbientIndexer, type AmbientStatus } from '../indexer/ambient.ts';
-import { deriveDisplayState } from '../liveness.ts';
+import { applyLiveness } from '../liveness.ts';
 import type { Database } from 'bun:sqlite';
 
 import { useStore, visibleKeys } from './store.ts';
@@ -118,7 +118,7 @@ function Header({
     if (s.showAll) return 0;
     let h = 0;
     for (const r of s.sessions.values()) {
-      const d = deriveDisplayState(r, nowMs);
+      const d = applyLiveness(r, nowMs);
       if (d === 'stale' || d === 'done') h++;
     }
     return h;
@@ -200,7 +200,7 @@ function App(): React.ReactElement {
         // lifecycle value; the displayed state is a function of (row, now).
         const now = Date.now();
         const rows = raw.map((r) => {
-          const display = deriveDisplayState(r, now);
+          const display = applyLiveness(r, now);
           return display === r.state ? r : { ...r, state: display };
         });
         const changed = useStore.getState().applyDiff(rows);
@@ -247,6 +247,15 @@ function App(): React.ReactElement {
       logError('recent events', err);
     }
   }, [mode, focusedKey, tick]);
+
+  // Clear the alt-screen on mode change. Ink renders in place and tracks the
+  // last frame's line count to redraw efficiently; switching between grid
+  // (short) and detail (tall) leaves stale lines below the new frame. The
+  // ESC[2J + ESC[H sequence wipes the screen and parks the cursor at top so
+  // the next render starts from a clean slate.
+  useEffect(() => {
+    process.stdout.write('\x1b[2J\x1b[H');
+  }, [mode]);
 
   // SIGTERM: ink installs SIGINT itself. Cover SIGTERM for completeness so
   // `kill <pid>` exits cleanly through the same path.

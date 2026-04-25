@@ -134,7 +134,14 @@ function mapHookEventToKind(
       // Codex hook (per plan); explicit permission signal, no ambiguity.
       return 'permission_request';
     case 'Stop':
-      return 'session_stop';
+      // Empirical: Claude Code's `Stop` hook fires when the assistant's TURN
+      // completes (response finished, awaiting next prompt) -- not when the
+      // session terminates. Codex `Stop` behaves identically. We therefore
+      // map it to `turn_complete`, which transitions the session to `waiting`
+      // rather than `done`. There is no reliable session-end hook on either
+      // provider in v1; sessions disappear from "active" view via state-age
+      // staleness instead.
+      return 'turn_complete';
     case 'TurnComplete':
     case 'turn_complete':
       return 'turn_complete';

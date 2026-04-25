@@ -13,7 +13,7 @@
 // state/current_tool fallback for cases where a row mutated within the same ms.
 
 import { create } from 'zustand';
-import { deriveDisplayState } from '../liveness.ts';
+import { applyLiveness } from '../liveness.ts';
 import type { EventRow, SessionRow } from '../types.ts';
 
 export type Mode = 'grid' | 'detail';
@@ -159,7 +159,7 @@ export function visibleKeys(
     if (!r) return false;
 
     if (!showAll) {
-      const display = deriveDisplayState(r, nowMs);
+      const display = applyLiveness(r, nowMs);
       if (display === 'stale' || display === 'done') return false;
     }
 

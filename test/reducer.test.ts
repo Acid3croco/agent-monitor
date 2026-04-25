@@ -155,8 +155,10 @@ describe('reducer: claude fixture', () => {
       { index: 7, kind: 'user_attention', state: 'thinking' },
       // TurnComplete -> turn_complete -> waiting
       { index: 8, kind: 'turn_complete', state: 'waiting' },
-      // Stop -> session_stop -> done
-      { index: 9, kind: 'session_stop', state: 'done' },
+      // Stop hook fires on each turn end (NOT session end) -> turn_complete
+      // -> waiting. Empirically validated against live Claude Code; there is
+      // no reliable session-end hook on the agent side.
+      { index: 9, kind: 'turn_complete', state: 'waiting' },
     ]);
   });
 });
@@ -178,7 +180,8 @@ describe('reducer: codex fixture', () => {
       { index: 5, kind: 'tool_call_start', state: 'tool', currentTool: 'shell' },
       { index: 6, kind: 'tool_call_end', state: 'thinking' },
       { index: 7, kind: 'turn_complete', state: 'waiting' },
-      { index: 8, kind: 'session_stop', state: 'done' },
+      // Codex Stop fires on turn end too, same as Claude.
+      { index: 8, kind: 'turn_complete', state: 'waiting' },
     ]);
   });
 });
