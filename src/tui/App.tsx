@@ -255,6 +255,10 @@ function App(): React.ReactElement {
 
   // Keyboard. Filter-edit mode is special: ink-text-input owns the keystrokes,
   // so we suppress useInput while it's open (esc/enter both close the input).
+  // Chord state for `gg` (jump to top). First `g` arms; second `g` within
+  // 600ms fires; any other key cancels. `G` (capital) jumps to bottom directly.
+  const awaitingG = useRef<{ at: number } | null>(null);
+
   useInput(
     (input, key) => {
       const st = useStore.getState();
@@ -266,6 +270,46 @@ function App(): React.ReactElement {
           st.setFilter('');
         }
         return;
+      }
+
+      // Vim-style chord: gg jumps focus to first cell, G jumps to last.
+      // Process in grid mode only — detail mode reserves j/k for event scroll.
+      if (st.mode === 'grid') {
+        if (input === 'g') {
+          const now = Date.now();
+          if (awaitingG.current && now - awaitingG.current.at < 600) {
+            // Second 'g' fired in time — jump to top.
+            const vis = visibleKeys(st.order, st.sessions, st.filter, {
+              showAll: st.showAll,
+              nowMs: Date.now(),
+            });
+            if (vis.length > 0) {
+              st.setFocusedKey(vis[0] ?? null);
+              st.setScrollOffset(0);
+            }
+            awaitingG.current = null;
+            return;
+          }
+          // First 'g' — arm.
+          awaitingG.current = { at: now };
+          return;
+        }
+        if (input === 'G') {
+          // Capital G: jump to last visible cell.
+          const vis = visibleKeys(st.order, st.sessions, st.filter, {
+            showAll: st.showAll,
+            nowMs: Date.now(),
+          });
+          if (vis.length > 0) {
+            st.setFocusedKey(vis[vis.length - 1] ?? null);
+            // Scroll to bottom — let auto-scroll on next move-focus tick clamp.
+            st.setScrollOffset(Math.max(0, vis.length - 1));
+          }
+          awaitingG.current = null;
+          return;
+        }
+        // Any other key cancels the chord.
+        if (awaitingG.current) awaitingG.current = null;
       }
 
       const action =

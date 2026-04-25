@@ -128,10 +128,10 @@ SELECT state, COUNT(*) AS count FROM sessions GROUP BY state ORDER BY state
 // different source_paths (so the (source_path, source_offset) unique index
 // doesn't catch them). Bucketing is the cheapest way to avoid double-counts.
 //
-// Subagent count is the number of subagent rows with activity in the last
-// 90 seconds — i.e. CURRENTLY RUNNING subagents, not the lifetime total.
-// Filters: matching transcript_path under <parent>/subagents/ AND distinct
-// session_id (defensive) AND a recent last_event_at_ms.
+// Subagent count is reported as TWO numbers: how many are currently running
+// (last_event within 90s) and how many have ever existed under this parent.
+// The card UI renders `Nactive/Ntotal subs` when total > 0 — answers both
+// "is fan-out happening right now?" and "did this session fan out at all?".
 const SQL_ALL_SESSION_STATS = `
 SELECT
   s.key AS key,
@@ -139,22 +139,38 @@ SELECT
      WHERE e.session_key = s.key AND e.kind = 'user_prompt') AS turns,
   (SELECT COUNT(*) FROM sessions c
      WHERE c.session_id != s.session_id
+       AND c.transcript_path LIKE '%' || s.session_id || '/subagents/%') AS subagents_total,
+  (SELECT COUNT(*) FROM sessions c
+     WHERE c.session_id != s.session_id
        AND c.transcript_path LIKE '%' || s.session_id || '/subagents/%'
-       AND c.last_event_at_ms > (CAST(strftime('%s','now') AS INTEGER) * 1000 - 90000)) AS subagents
+       AND c.last_event_at_ms > (CAST(strftime('%s','now') AS INTEGER) * 1000 - 90000)) AS subagents_active
 FROM sessions s
 `;
 
 export interface SessionStats {
   turns: number;
-  subagents: number;
+  subagentsActive: number;
+  subagentsTotal: number;
 }
 
 export function getAllSessionStats(): Map<string, SessionStats> {
-  const rows = prepare<{ key: string; turns: number; subagents: number }, []>(
-    SQL_ALL_SESSION_STATS,
-  ).all() as { key: string; turns: number; subagents: number }[];
+  const rows = prepare<
+    { key: string; turns: number; subagents_active: number; subagents_total: number },
+    []
+  >(SQL_ALL_SESSION_STATS).all() as {
+    key: string;
+    turns: number;
+    subagents_active: number;
+    subagents_total: number;
+  }[];
   const out = new Map<string, SessionStats>();
-  for (const r of rows) out.set(r.key, { turns: r.turns, subagents: r.subagents });
+  for (const r of rows) {
+    out.set(r.key, {
+      turns: r.turns,
+      subagentsActive: r.subagents_active,
+      subagentsTotal: r.subagents_total,
+    });
+  }
   return out;
 }
 
@@ -190,10 +206,14 @@ export function insertEvent(ev: NormalizedEvent): number {
   return Number(info.lastInsertRowid);
 }
 
+// Order by observed_at_ms primarily so the user sees events in chronological
+// order regardless of which source (hook vs rollout) ingested first; fall back
+// to id for deterministic tie-breaking. Was id-only — Codex flagged that
+// timestamps in the detail view appeared non-monotonic.
 const SQL_RECENT_EVENTS_FOR_SESSION = `
 SELECT * FROM events
 WHERE session_key = $key
-ORDER BY id DESC
+ORDER BY observed_at_ms DESC, id DESC
 LIMIT $limit
 `;
 

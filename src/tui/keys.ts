@@ -8,6 +8,8 @@
 //   k / up        previous cell
 //   h / left      one column left
 //   l / right     one column right
+//   gg            jump focus to first visible cell
+//   G             jump focus to last visible cell
 //   enter         open detail
 //   /             enter filter mode
 //   esc           clear filter / exit filter mode
@@ -54,6 +56,7 @@ export type Action =
   | { type: 'copy-resume' }
   | { type: 'reconcile' }
   | { type: 'move-focus'; dx: -1 | 0 | 1; dy: -1 | 0 | 1 }
+  | { type: 'jump-focus'; to: 'top' | 'bottom' }
   | { type: 'scroll-events'; delta: number }
   | { type: 'scroll-page'; direction: -1 | 1 };
 
@@ -149,6 +152,8 @@ export function applyActionToStore(
     case 'reconcile':
       return state;
     case 'move-focus':
+      return state; // requires visible-list context, handled at App level
+    case 'jump-focus':
       return state; // requires visible-list context, handled at App level
     case 'scroll-events':
       return { ...state, eventScroll: Math.max(0, state.eventScroll + action.delta) };

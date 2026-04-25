@@ -231,7 +231,8 @@ export function Grid(): React.ReactElement {
                       focused={k === focusedKey}
                       nowMs={nowMs}
                       turns={stats?.turns ?? 0}
-                      subagents={stats?.subagents ?? 0}
+                      subagentsActive={stats?.subagentsActive ?? 0}
+                      subagentsTotal={stats?.subagentsTotal ?? 0}
                     />
                   );
                 })}

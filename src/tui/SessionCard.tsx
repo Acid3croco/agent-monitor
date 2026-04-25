@@ -135,7 +135,8 @@ export interface SessionCardProps {
   focused: boolean;
   nowMs: number;
   turns?: number;
-  subagents?: number;
+  subagentsActive?: number;
+  subagentsTotal?: number;
 }
 
 export const SessionCard = React.memo(
@@ -145,7 +146,8 @@ export const SessionCard = React.memo(
     focused,
     nowMs,
     turns = 0,
-    subagents = 0,
+    subagentsActive = 0,
+    subagentsTotal = 0,
   }: SessionCardProps): React.ReactElement {
     const state = cell.state;
     const color = STATE_COLOR[state] ?? 'white';
@@ -176,12 +178,15 @@ export const SessionCard = React.memo(
     const topLine = `${glyphs.tl}${glyphs.h} ${title} ${filler} ${freshness} ${glyphs.h}${glyphs.tr}`;
 
     // --- line 2: state line --- (left: spinner+state+tool, right: turns)
-    // Progress hint: turn count + subagent count when nonzero. Lets the user
-    // confirm a session is making progress without opening the detail view.
+    // Progress hint: turn count + subagent count. Subs format is
+    // `<active>/<total> subs` only when total > 0. Lets the user confirm a
+    // session is progressing AND see fan-out at a glance.
+    const subsLabel =
+      subagentsTotal > 0 ? `${subagentsActive}/${subagentsTotal} subs` : '';
     const turnsText =
       turns > 0
-        ? subagents > 0
-          ? `${turns}t · ${subagents} subs`
+        ? subsLabel
+          ? `${turns}t · ${subsLabel}`
           : `${turns}t`
         : '';
     const stateText = stateLabel(state, cell.current_tool);
@@ -265,7 +270,8 @@ export const SessionCard = React.memo(
     prev.focused === next.focused &&
     prev.cell === next.cell &&
     prev.turns === next.turns &&
-    prev.subagents === next.subagents &&
+    prev.subagentsActive === next.subagentsActive &&
+    prev.subagentsTotal === next.subagentsTotal &&
     // We bucket nowMs so a 200ms tick doesn't bust memo on every render.
     Math.floor(prev.nowMs / 1000) === Math.floor(next.nowMs / 1000),
 );

@@ -99,7 +99,8 @@ export interface SessionCompactProps {
   focused: boolean;
   nowMs: number;
   turns?: number;
-  subagents?: number;
+  subagentsActive?: number;
+  subagentsTotal?: number;
 }
 
 export const SessionCompact = React.memo(
@@ -109,7 +110,8 @@ export const SessionCompact = React.memo(
     focused,
     nowMs,
     turns = 0,
-    subagents = 0,
+    subagentsActive = 0,
+    subagentsTotal = 0,
   }: SessionCompactProps): React.ReactElement {
     const state = cell.state;
     const color = STATE_COLOR[state] ?? 'white';
@@ -135,10 +137,12 @@ export const SessionCompact = React.memo(
     // Layout (between │ and │):
     //   1 edge_left + 2 spinner + state + padRight + turnsText + 1 edge_right = innerWidth
     const stateText = stateLabel(state, cell.current_tool);
+    const subsLabel =
+      subagentsTotal > 0 ? `${subagentsActive}/${subagentsTotal} subs` : '';
     const turnsText =
       turns > 0
-        ? subagents > 0
-          ? `${turns}t · ${subagents} subs`
+        ? subsLabel
+          ? `${turns}t · ${subsLabel}`
           : `${turns}t`
         : '';
     const stateBudget = innerWidth - 4 /* both edges + spinner */ - turnsText.length;
@@ -180,6 +184,7 @@ export const SessionCompact = React.memo(
     prev.focused === next.focused &&
     prev.cell === next.cell &&
     prev.turns === next.turns &&
-    prev.subagents === next.subagents &&
+    prev.subagentsActive === next.subagentsActive &&
+    prev.subagentsTotal === next.subagentsTotal &&
     Math.floor(prev.nowMs / 1000) === Math.floor(next.nowMs / 1000),
 );
