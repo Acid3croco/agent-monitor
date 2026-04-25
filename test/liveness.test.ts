@@ -4,7 +4,12 @@
 // the DB; deriveDisplayState is pure (row + clock -> SessionState).
 
 import { describe, expect, test } from 'bun:test';
-import { ACTIVE_WINDOW_MS, deriveDisplayState } from '../src/liveness.ts';
+import {
+  ACTIVE_WINDOW_MS,
+  FRESH_EVENT_GRACE_MS,
+  deriveDisplayState,
+  deriveLiveState,
+} from '../src/liveness.ts';
 import type { SessionRow, SessionState } from '../src/types.ts';
 
 function row(over: Partial<SessionRow>): SessionRow {
@@ -84,5 +89,49 @@ describe('deriveDisplayState', () => {
     const r = row({ state: 'thinking', last_event_at_ms: 0 });
     expect(deriveDisplayState(r, ACTIVE_WINDOW_MS - 1)).toBe('thinking');
     expect(deriveDisplayState(r, ACTIVE_WINDOW_MS)).toBe('idle');
+  });
+});
+
+describe('deriveLiveState (combines /proc proof with fresh-event grace)', () => {
+  test('proven alive: trust deriveDisplayState (DB state when fresh)', () => {
+    // Old last-event but proven via proc — within ACTIVE_WINDOW returns DB state.
+    const r = row({ state: 'waiting', last_event_at_ms: 1_000 });
+    expect(deriveLiveState(r, 1_000, true)).toBe('waiting');
+    // Past ACTIVE_WINDOW — proven idle.
+    expect(deriveLiveState(r, 1_000 + ACTIVE_WINDOW_MS, true)).toBe('idle');
+  });
+
+  test('not proven, fresh event in grace: alive (covers lazy-lock startup)', () => {
+    // SessionStart-just-fired Claude: row exists, .lock not yet open.
+    // Without grace this would be 'done' (hidden); with grace we keep DB state.
+    const r = row({ state: 'waiting', last_event_at_ms: 100_000 });
+    // 0s, half-grace, 1ms-before-grace-expiry — all alive.
+    expect(deriveLiveState(r, 100_000, false)).toBe('waiting');
+    expect(deriveLiveState(r, 100_000 + 60_000, false)).toBe('waiting');
+    expect(deriveLiveState(r, 100_000 + FRESH_EVENT_GRACE_MS - 1, false)).toBe('waiting');
+  });
+
+  test('not proven, event past grace: done (claude really is gone)', () => {
+    const r = row({ state: 'waiting', last_event_at_ms: 100_000 });
+    // Exactly at grace boundary the row flips to done — < strict, not <=.
+    expect(deriveLiveState(r, 100_000 + FRESH_EVENT_GRACE_MS, false)).toBe('done');
+    expect(deriveLiveState(r, 100_000 + FRESH_EVENT_GRACE_MS + 1, false)).toBe('done');
+  });
+
+  test('terminal done is preserved across both branches', () => {
+    // Once the reducer marks state='done', neither proof nor grace should
+    // resurrect it.
+    const r = row({ state: 'done', last_event_at_ms: 100_000 });
+    expect(deriveLiveState(r, 100_000, true)).toBe('done');
+    expect(deriveLiveState(r, 100_000, false)).toBe('done');
+    expect(deriveLiveState(r, 100_000 + FRESH_EVENT_GRACE_MS - 1, false)).toBe('done');
+  });
+
+  test('grace covers the observed Claude lazy-lock gap (~87s)', () => {
+    // Concrete regression guard: the empirical SessionStart→.lock gap was 87s.
+    // Make sure 87s after the last event we still consider the row alive when
+    // proof is missing — this is the bug that motivated the grace.
+    const r = row({ state: 'waiting', last_event_at_ms: 0 });
+    expect(deriveLiveState(r, 87_000, false)).toBe('waiting');
   });
 });

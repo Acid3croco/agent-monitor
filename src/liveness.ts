@@ -18,11 +18,14 @@ import type { SessionRow, SessionState } from './types.ts';
 
 // Authoritative session-end check for Claude.
 //
-// Claude Code creates `~/.claude/tasks/<session_id>/.lock` at session start.
-// The file's *existence* is not enough — crashed processes leave stale locks
-// behind. Empirically, Claude doesn't use flock(2) on it either; the actual
-// signal is that a live `claude` process has the lock file open as a file
-// descriptor. We detect this by walking /proc/<pid>/fd and matching readlinks.
+// Claude Code creates `~/.claude/tasks/<session_id>/.lock` *lazily* — empirically
+// only on the first TodoWrite. SessionStart fires through the hook well before
+// (~minute) the lock file is born, so for fresh sessions the lock fd is not yet
+// open and a /proc/fd scan can't prove liveness. We compensate with the
+// fresh-event grace in `applyLiveness` below: recent hook events are stronger
+// evidence the agent is alive than the absence of a not-yet-created lock fd.
+// Once the lock exists, a live `claude` process holds it open as a file
+// descriptor and we detect it by walking /proc/<pid>/fd and matching readlinks.
 //
 // We cache the result of the scan for ALIVE_CACHE_MS so 88 cells * 5 ticks/sec
 // don't hammer /proc. The scan itself is bounded to PIDs whose /proc/<pid>/comm
@@ -151,6 +154,14 @@ export function isCodexSessionAlive(sessionId: string): boolean {
 // fallback; we dropped it because the proc check makes it redundant.
 export const ACTIVE_WINDOW_MS = 60 * 60 * 1000; // 60 min — keep DB state as-is
 
+// Grace for the start-of-session window when Claude hasn't yet opened its
+// `.lock` fd (see top-of-file comment). If we observed an event within this
+// window, treat the session as alive even without a /proc proof — events flow
+// only from the live agent. 120 s comfortably covers the worst lock-creation
+// gap we've measured (~87 s) while still letting a genuinely crashed session
+// converge to `done` quickly.
+export const FRESH_EVENT_GRACE_MS = 120 * 1000;
+
 // Compute the display state for a row at a given wall-clock instant.
 //
 // Pure: no fs side effects. Production callers use `applyLiveness` (below)
@@ -171,14 +182,36 @@ export function deriveDisplayState(row: SessionRow, nowMs: number): SessionState
   return 'idle';
 }
 
-// Production-side liveness: authoritative process-fd checks first; if no
-// claude/codex process holds the session's lock fd / rollout fd, the session
-// is DONE regardless of how recent its last event was. Side-effecting (walks
-// /proc, cached for 3 s); tests should stick to deriveDisplayState.
+// Pure decision: combine the impure "proven via /proc" boolean with the
+// row+clock to produce a display state. Exported so tests can exercise the
+// grace window without mocking /proc.
+//
+//   - proven via /proc            -> deriveDisplayState (DB state or idle)
+//   - else fresh event in window  -> deriveDisplayState (events imply liveness)
+//   - else                        -> 'done'
+//
+// `state === 'done'` is terminal in deriveDisplayState; both alive branches
+// preserve that. The grace branch deliberately mirrors the proven branch
+// rather than flipping to a synthetic state — false-alive for ~2 min reads
+// better in the grid than a "maybe-alive" placeholder.
+export function deriveLiveState(
+  row: SessionRow,
+  nowMs: number,
+  proven: boolean,
+): SessionState {
+  if (proven) return deriveDisplayState(row, nowMs);
+  if (nowMs - row.last_event_at_ms < FRESH_EVENT_GRACE_MS) {
+    return deriveDisplayState(row, nowMs);
+  }
+  return 'done';
+}
+
+// Production-side liveness: combine the /proc check with the fresh-event
+// grace via deriveLiveState. Side-effecting (walks /proc, cached for 3 s);
+// tests should hit deriveLiveState or deriveDisplayState directly.
 export function applyLiveness(row: SessionRow, nowMs: number): SessionState {
   const proven =
     (row.provider === 'claude' && isClaudeSessionAlive(row.session_id)) ||
     (row.provider === 'codex' && isCodexSessionAlive(row.session_id));
-  if (!proven) return 'done';
-  return deriveDisplayState(row, nowMs);
+  return deriveLiveState(row, nowMs, proven);
 }
