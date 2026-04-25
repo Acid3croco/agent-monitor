@@ -209,15 +209,16 @@ function App(): React.ReactElement {
     }
   }, [mode, focusedKey, tick]);
 
-  // Clear the alt-screen on mode/density change. Ink renders in place and
-  // tracks the last frame's line count to redraw efficiently; switching
-  // between layouts of different heights leaves stale lines below the new
-  // frame. ESC[2J + ESC[H wipes the screen and parks the cursor at top so the
-  // next render starts from a clean slate.
+  // We used to issue ESC[2J + ESC[H on mode/density change to wipe stale
+  // lines from the previous layout. That escape sequence bypasses Ink's
+  // log-update frame tracker — Ink thinks the screen is unchanged from the
+  // previous render and doesn't repaint, leaving the new mode blank. Letting
+  // Ink redraw on its own + the `key={mode}` remount trick on the inner
+  // subtree handles transitions; any leftover lines below the new frame are
+  // overwritten on next paint when content is short enough that Ink walks
+  // back over them, and otherwise they sit until the user scrolls.
   const density = useStore((s) => s.density);
-  useEffect(() => {
-    process.stdout.write('\x1b[2J\x1b[H');
-  }, [mode, density]);
+  void density;
 
   // Reset scroll when the filter changes. Without this, filtering down to a
   // few cells while scrolled deep leaves the viewport stuck below the last
@@ -501,7 +502,12 @@ function App(): React.ReactElement {
       <StatusBar nowMs={nowMs} />
       <AmbientFooter status={ambient} nowMs={nowMs} />
       {toast ? <Text color="green">{toast}</Text> : null}
-      <Box marginTop={1}>
+      {/* `key={mode}` forces Ink to remount the inner subtree on mode change.
+          Without this, the raw ESC[2J clear we issue beforehand bypasses
+          Ink's log-update frame tracker and the next paint is a no-op
+          (Ink thinks nothing changed) — the screen stays blank in the new
+          mode. Remounting via key change makes Ink redraw the full subtree. */}
+      <Box marginTop={1} key={mode}>
         {mode === 'grid' ? <Grid /> : mode === 'detail' ? <Detail /> : <Help />}
       </Box>
     </Box>
