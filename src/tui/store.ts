@@ -14,9 +14,15 @@
 
 import { create } from 'zustand';
 import { applyLiveness } from '../liveness.ts';
+import type { SessionStats } from '../store/queries.ts';
 import type { EventRow, SessionRow } from '../types.ts';
 
 export type Mode = 'grid' | 'detail';
+export type Density = 'card' | 'compact' | 'row';
+
+// Cycle order for the `d` key. Card is the v1.1 default; row is the legacy
+// dense one-line layout retained for high session counts.
+const DENSITY_CYCLE: readonly Density[] = ['card', 'compact', 'row'];
 
 export interface TuiState {
   // data
@@ -29,10 +35,18 @@ export interface TuiState {
   filter: string;
   filterMode: boolean; // true while user is editing the filter text
   showAll: boolean;   // when false, hide sessions whose display state is stale/done
+  density: Density;   // grid-cell renderer (cycled with `d`); not persisted
 
   // detail
   recentEvents: Map<string, EventRow[]>;
   eventScroll: number; // top index into the events list for detail view
+
+  // grid scroll: index of the first visible cell in the current visibleKeys
+  // ordering. Auto-adjusts on focus move; bumped by Ctrl-D / Ctrl-U.
+  scrollOffset: number;
+
+  // per-session progress stats (turns + subagent count), refreshed each tick
+  sessionStats: Map<string, SessionStats>;
 
   // tick / actions
   tick: number;
@@ -42,8 +56,12 @@ export interface TuiState {
   setFilter: (s: string) => void;
   setFilterMode: (on: boolean) => void;
   setShowAll: (on: boolean) => void;
+  setDensity: (d: Density) => void;
+  cycleDensity: () => void;
   setRecentEvents: (key: string, events: EventRow[]) => void;
   setEventScroll: (n: number) => void;
+  setSessionStats: (m: Map<string, SessionStats>) => void;
+  setScrollOffset: (n: number) => void;
 }
 
 // Equality check for one session row. We compare the fields that the cell
@@ -68,8 +86,11 @@ export const useStore = create<TuiState>((set, get) => ({
   filter: '',
   filterMode: false,
   showAll: false,
+  density: 'card',
   recentEvents: new Map(),
   eventScroll: 0,
+  scrollOffset: 0,
+  sessionStats: new Map(),
   tick: 0,
 
   applyDiff: (rows) => {
@@ -131,12 +152,21 @@ export const useStore = create<TuiState>((set, get) => ({
   setFilter: (s) => set({ filter: s }),
   setFilterMode: (on) => set({ filterMode: on }),
   setShowAll: (on) => set({ showAll: on }),
+  setDensity: (d) => set({ density: d }),
+  cycleDensity: () => {
+    const cur = get().density;
+    const idx = DENSITY_CYCLE.indexOf(cur);
+    const next = DENSITY_CYCLE[(idx + 1) % DENSITY_CYCLE.length] ?? 'card';
+    set({ density: next });
+  },
   setRecentEvents: (key, events) => {
     const next = new Map(get().recentEvents);
     next.set(key, events);
     set({ recentEvents: next });
   },
   setEventScroll: (n) => set({ eventScroll: Math.max(0, n) }),
+  setSessionStats: (m) => set({ sessionStats: m }),
+  setScrollOffset: (n) => set({ scrollOffset: Math.max(0, n) }),
 }));
 
 // Helper used by the grid to derive the display list. Pure; callers pass the

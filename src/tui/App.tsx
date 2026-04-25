@@ -14,12 +14,12 @@
 //
 // All TUI-internal logging goes through ./log.ts; never use console.log here.
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
-import TextInput from 'ink-text-input';
 
 import {
   getActiveSessions,
+  getAllSessionStats,
   getRecentEventsForSession,
 } from '../store/queries.ts';
 import { runReconcileOnce } from '../reconciler/index.ts';
@@ -30,6 +30,7 @@ import type { Database } from 'bun:sqlite';
 import { useStore, visibleKeys } from './store.ts';
 import { Grid } from './Grid.tsx';
 import { Detail } from './Detail.tsx';
+import { StatusBar } from './StatusBar.tsx';
 import {
   computeFocusAfterMove,
   handleDetailKey,
@@ -38,7 +39,10 @@ import {
 import { log, logError } from './log.ts';
 
 const TICK_MS = 200;
-const CELL_WIDTH = 38;
+// Approximate column width used for keyboard navigation. The visual cell
+// widths now vary by density (see Grid.tsx); using a slightly wider value
+// here biases h/l toward stepping one card at a time in the typical layout.
+const NAV_CELL_WIDTH = 60;
 
 // Module-scoped pending-stop promise: the App's unmount cleanup is sync, but
 // we must wait for in-flight drain/reconcile passes to finish before runTui's
@@ -96,69 +100,6 @@ function AmbientFooter({
   );
 }
 
-function Header({
-  stats,
-  ambient,
-  nowMs,
-}: {
-  stats: { tick: number; changed: number };
-  ambient: AmbientStatus | null;
-  nowMs: number;
-}) {
-  const mode = useStore((s) => s.mode);
-  const filter = useStore((s) => s.filter);
-  const filterMode = useStore((s) => s.filterMode);
-  const showAll = useStore((s) => s.showAll);
-  const total = useStore((s) => s.sessions.size);
-  const setFilter = useStore((s) => s.setFilter);
-  const setFilterMode = useStore((s) => s.setFilterMode);
-
-  // Number of sessions hidden because they're stale/done and showAll is off.
-  const hiddenCount = useStore((s) => {
-    if (s.showAll) return 0;
-    let h = 0;
-    for (const r of s.sessions.values()) {
-      const d = applyLiveness(r, nowMs);
-      if (d === 'stale' || d === 'done') h++;
-    }
-    return h;
-  });
-
-  return (
-    <Box flexDirection="column">
-      <Box>
-        <Text bold>agent-monitor </Text>
-        <Text dimColor>
-          {mode === 'grid' ? 'grid' : 'detail'} · sessions={total}
-          {hiddenCount > 0 ? ` (${hiddenCount} hidden, press a)` : ''} · tick=
-          {stats.tick} · changed={stats.changed}
-        </Text>
-      </Box>
-      <Box>
-        {filterMode ? (
-          <>
-            <Text>filter: </Text>
-            <TextInput
-              value={filter}
-              onChange={setFilter}
-              onSubmit={() => setFilterMode(false)}
-            />
-            <Text dimColor>  (esc to exit)</Text>
-          </>
-        ) : mode === 'grid' ? (
-          <Text dimColor>
-            j/k/h/l move · enter detail · / filter · a {showAll ? 'hide' : 'show'} stale · r reconcile · q quit
-            {filter ? `   filter: "${filter}" (esc clears)` : ''}
-          </Text>
-        ) : (
-          <Text dimColor>esc back · j/k scroll events · q quit</Text>
-        )}
-      </Box>
-      <AmbientFooter status={ambient} nowMs={nowMs} />
-    </Box>
-  );
-}
-
 // ---------- app ----------
 function App(): React.ReactElement {
   const { exit } = useApp();
@@ -183,8 +124,12 @@ function App(): React.ReactElement {
   const ambientHandle = useRef<{ stop(): Promise<void> } | null>(null);
 
   // Compute current cols here so navigation respects the live terminal width.
+  // For row density we navigate at NAV_CELL_WIDTH; the visual grid uses its
+  // own width per density mode (Grid.tsx). The mismatch is acceptable for
+  // navigation purposes — h/l still moves one card horizontally on common
+  // terminal widths.
   const termCols = stdout?.columns ?? 80;
-  const cols = Math.max(1, Math.floor(termCols / CELL_WIDTH));
+  const cols = Math.max(1, Math.floor(termCols / NAV_CELL_WIDTH));
 
   // 200 ms poll → applyDiff. Pulling state.applyDiff via getState avoids
   // re-binding the interval when the action ref changes (it doesn't, but
@@ -205,6 +150,15 @@ function App(): React.ReactElement {
         });
         const changed = useStore.getState().applyDiff(rows);
         if (changed > 0) setLastChanged(changed);
+
+        // Refresh per-session progress stats (turns + subagents) once per tick.
+        // Single SQL roundtrip; surfaced in the card UI for "is it progressing"
+        // confirmation. No-op if the query fails — render falls back to 0.
+        try {
+          useStore.getState().setSessionStats(getAllSessionStats());
+        } catch (err) {
+          logError('session stats', err);
+        }
 
         // Auto-focus first cell on first non-empty tick so the user has
         // something to navigate from immediately.
@@ -248,14 +202,22 @@ function App(): React.ReactElement {
     }
   }, [mode, focusedKey, tick]);
 
-  // Clear the alt-screen on mode change. Ink renders in place and tracks the
-  // last frame's line count to redraw efficiently; switching between grid
-  // (short) and detail (tall) leaves stale lines below the new frame. The
-  // ESC[2J + ESC[H sequence wipes the screen and parks the cursor at top so
-  // the next render starts from a clean slate.
+  // Clear the alt-screen on mode/density change. Ink renders in place and
+  // tracks the last frame's line count to redraw efficiently; switching
+  // between layouts of different heights leaves stale lines below the new
+  // frame. ESC[2J + ESC[H wipes the screen and parks the cursor at top so the
+  // next render starts from a clean slate.
+  const density = useStore((s) => s.density);
   useEffect(() => {
     process.stdout.write('\x1b[2J\x1b[H');
-  }, [mode]);
+  }, [mode, density]);
+
+  // Reset scroll when the filter changes. Without this, filtering down to a
+  // few cells while scrolled deep leaves the viewport stuck below the last
+  // visible cell (we clamp on render, but it's still confusing).
+  useEffect(() => {
+    useStore.getState().setScrollOffset(0);
+  }, [filter]);
 
   // SIGTERM: ink installs SIGINT itself. Cover SIGTERM for completeness so
   // `kill <pid>` exits cleanly through the same path.
@@ -349,6 +311,15 @@ function App(): React.ReactElement {
           return;
         case 'toggle-show-all':
           st.setShowAll(!st.showAll);
+          // The visible list changes shape; reset scroll so we don't end up
+          // mid-list staring at nothing meaningful.
+          st.setScrollOffset(0);
+          return;
+        case 'cycle-density':
+          st.cycleDensity();
+          // Different density => different per-page step => previous offset
+          // is no longer the user's intent. Reset.
+          st.setScrollOffset(0);
           return;
         case 'move-focus': {
           const vis = visibleKeys(st.order, st.sessions, st.filter, {
@@ -363,10 +334,31 @@ function App(): React.ReactElement {
             action.dy,
           );
           st.setFocusedKey(next);
+          // Auto-scroll: keep focused cell in view. Window size is set by
+          // Grid.tsx; we approximate it here as `windowSize` cells. If the
+          // focus index is outside [scrollOffset, scrollOffset+windowSize),
+          // clamp it back in. Conservative window estimate (~12) is fine
+          // because Grid.tsx will further clamp by terminal height.
+          if (next != null) {
+            const idx = vis.indexOf(next);
+            const windowSize = Math.max(2, st.density === 'card' ? 8 : st.density === 'compact' ? 14 : 30);
+            const start = st.scrollOffset;
+            if (idx < start) st.setScrollOffset(idx);
+            else if (idx >= start + windowSize) st.setScrollOffset(idx - windowSize + 1);
+          }
           return;
         }
         case 'scroll-events': {
           st.setEventScroll(st.eventScroll + action.delta);
+          return;
+        }
+        case 'scroll-page': {
+          // Half-page scroll. The exact "page" depends on density and
+          // terminal height; using ~6 cells per half-page works well enough
+          // and matches vim's "half-screen" feel.
+          const step = Math.max(2, st.density === 'card' ? 6 : st.density === 'compact' ? 10 : 20);
+          const next = Math.max(0, st.scrollOffset + step * action.direction);
+          st.setScrollOffset(next);
           return;
         }
       }
@@ -376,11 +368,15 @@ function App(): React.ReactElement {
     // intercept Esc here. '/'-as-toggle is handled in the TextInput onChange.
   );
 
-  const stats = useMemo(() => ({ tick, changed: lastChanged }), [tick, lastChanged]);
+  // Touch tick / lastChanged so the React subscription stays live; we no
+  // longer print them in the header (StatusBar uses its own counts) but the
+  // 200ms tick is still what drives the re-render cadence for everyone else.
+  void tick;
+  void lastChanged;
 
-  // Reference 'order', 'sessions', 'filter' here so the Header re-renders when
-  // the user pages the filter — otherwise the unused-vars TS option would
-  // flag them. They're already consumed by Grid via store hooks.
+  // Reference 'order', 'sessions', 'filter' here so the StatusBar re-renders
+  // when the user pages the filter — otherwise the unused-vars TS option
+  // would flag them. They're already consumed by Grid via store hooks.
   void order;
   void sessions;
   void filter;
@@ -391,7 +387,8 @@ function App(): React.ReactElement {
 
   return (
     <Box flexDirection="column">
-      <Header stats={stats} ambient={ambient} nowMs={nowMs} />
+      <StatusBar nowMs={nowMs} />
+      <AmbientFooter status={ambient} nowMs={nowMs} />
       <Box marginTop={1}>{mode === 'grid' ? <Grid /> : <Detail />}</Box>
     </Box>
   );

@@ -117,6 +117,39 @@ const SQL_ALL_SESSION_STATE_COUNTS = `
 SELECT state, COUNT(*) AS count FROM sessions GROUP BY state ORDER BY state
 `;
 
+// Per-session progress stats: turn count (number of user prompts handled) and
+// subagent count (other sessions whose transcript_path lives under the parent's
+// `<sid>/subagents/` directory). These are surfaced in the card UI so the user
+// can confirm a session is progressing without opening detail.
+//
+// The subagent self-match guard (`c.session_id != s.session_id`) is paranoid:
+// a parent's transcript_path doesn't contain its own session_id under
+// /subagents/, but the LIKE is loose so we filter out collisions defensively.
+const SQL_ALL_SESSION_STATS = `
+SELECT
+  s.key AS key,
+  (SELECT COUNT(*) FROM events e
+     WHERE e.session_key = s.key AND e.kind = 'user_prompt') AS turns,
+  (SELECT COUNT(*) FROM sessions c
+     WHERE c.session_id != s.session_id
+       AND c.transcript_path LIKE '%' || s.session_id || '/subagents/%') AS subagents
+FROM sessions s
+`;
+
+export interface SessionStats {
+  turns: number;
+  subagents: number;
+}
+
+export function getAllSessionStats(): Map<string, SessionStats> {
+  const rows = prepare<{ key: string; turns: number; subagents: number }, []>(
+    SQL_ALL_SESSION_STATS,
+  ).all() as { key: string; turns: number; subagents: number }[];
+  const out = new Map<string, SessionStats>();
+  for (const r of rows) out.set(r.key, { turns: r.turns, subagents: r.subagents });
+  return out;
+}
+
 export function getSessionStateCounts(): { state: SessionState; count: number }[] {
   return prepare<{ state: SessionState; count: number }, []>(
     SQL_ALL_SESSION_STATE_COUNTS,

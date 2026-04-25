@@ -12,6 +12,9 @@
 //   /             enter filter mode
 //   esc           clear filter / exit filter mode
 //   a             toggle show-all (incl. stale + done sessions)
+//   d             cycle density (card -> compact -> row)
+//   ctrl-d        scroll half-page down
+//   ctrl-u        scroll half-page up
 //   r             force reconcile (handled at App level)
 //   q | ctrl-c    quit
 //
@@ -46,9 +49,11 @@ export type Action =
   | { type: 'enter-filter' }
   | { type: 'clear-filter' }
   | { type: 'toggle-show-all' }
+  | { type: 'cycle-density' }
   | { type: 'reconcile' }
   | { type: 'move-focus'; dx: -1 | 0 | 1; dy: -1 | 0 | 1 }
-  | { type: 'scroll-events'; delta: number };
+  | { type: 'scroll-events'; delta: number }
+  | { type: 'scroll-page'; direction: -1 | 1 };
 
 // Compute the visible keys list (after filter), then move focus dx/dy in a
 // 2-D grid laid out left-to-right, top-to-bottom with `cols` columns. Returns
@@ -86,11 +91,15 @@ export function computeFocusAfterMove(
 
 export function handleGridKey(input: string, key: KeyEvent): Action {
   if (key.ctrl && input === 'c') return { type: 'quit' };
+  // Half-page scroll. Ctrl-D / Ctrl-U match vim/less convention.
+  if (key.ctrl && input === 'd') return { type: 'scroll-page', direction: 1 };
+  if (key.ctrl && input === 'u') return { type: 'scroll-page', direction: -1 };
   if (input === 'q') return { type: 'quit' };
   if (key.return) return { type: 'open-detail' };
   if (input === '/') return { type: 'enter-filter' };
   if (key.escape) return { type: 'clear-filter' };
   if (input === 'a') return { type: 'toggle-show-all' };
+  if (input === 'd') return { type: 'cycle-density' };
   if (input === 'r') return { type: 'reconcile' };
   if (input === 'j' || key.downArrow) return { type: 'move-focus', dx: 0, dy: 1 };
   if (input === 'k' || key.upArrow) return { type: 'move-focus', dx: 0, dy: -1 };
@@ -130,11 +139,15 @@ export function applyActionToStore(
       return { ...state, filter: '', filterMode: false };
     case 'toggle-show-all':
       return state; // App owns the showAll slice; pure helper just acks
+    case 'cycle-density':
+      return state; // App owns the density slice; pure helper just acks
     case 'reconcile':
       return state;
     case 'move-focus':
       return state; // requires visible-list context, handled at App level
     case 'scroll-events':
       return { ...state, eventScroll: Math.max(0, state.eventScroll + action.delta) };
+    case 'scroll-page':
+      return state; // App owns the scrollOffset slice; pure helper just acks
   }
 }

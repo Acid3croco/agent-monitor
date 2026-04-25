@@ -1,0 +1,245 @@
+// Bordered session card (v1.1 default density). One per session.
+//
+// Layout (5 lines including border):
+//   ╭─ Claude · opus-4.7 · projects/tui ─────────── 00:02 ─╮
+//   │ ⠴ RUNNING TOOL · Bash                       7 turns  │
+//   │   "let me push the commit and verify..."             │
+//   ╰──────────────────────────────────────────────────────╯
+//
+// Why hand-drawn borders rather than Ink's <Box borderStyle>: we want the
+// header (provider/model/cwd, freshness) embedded inside the top border line.
+// Ink's borderStyle paints a uniform border — it doesn't support inline
+// captions. So we render each line as a <Text> with explicit box characters.
+//
+// Focus marker: when focused, we use the `bold` cli-boxes glyph set
+// (┏━┓ / ┗━┛) instead of `round`. The border colour stays the state colour.
+// On terminals that render bold drawing chars poorly, the heavier glyphs are
+// still distinguishable from the rounded ones.
+
+import React from 'react';
+import { Box, Text } from 'ink';
+import Spinner from 'ink-spinner';
+import path from 'node:path';
+import type { SessionRow, SessionState } from '../types.ts';
+
+// Display state -> border colour. Matches the design table; deliberately
+// duplicates the older SessionCell map so the row-density renderer is
+// untouched.
+const STATE_COLOR: Record<string, string> = {
+  permission: 'red',
+  tool: 'cyan',
+  thinking: 'green',
+  waiting: 'yellow',
+  idle: 'gray',
+  stale: 'gray',
+  done: 'gray',
+  // Fallbacks for states we don't expect at render time.
+  dead: 'red',
+  recovered: 'blue',
+};
+
+const PROVIDER_LABEL: Record<string, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+};
+
+// --- helpers ---------------------------------------------------------------
+
+function shortCwd(cwd: string | null): string {
+  if (!cwd) return '?';
+  const parts = cwd.split(path.sep).filter(Boolean);
+  if (parts.length === 0) return cwd;
+  if (parts.length === 1) return parts[0]!;
+  return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+}
+
+function fmtFreshness(lastEventMs: number, nowMs: number): string {
+  const dSec = Math.max(0, Math.floor((nowMs - lastEventMs) / 1000));
+  if (dSec < 3600) {
+    const mm = Math.floor(dSec / 60).toString().padStart(2, '0');
+    const ss = (dSec % 60).toString().padStart(2, '0');
+    return `${mm}:${ss}`;
+  }
+  if (dSec < 86_400) {
+    const h = Math.floor(dSec / 3600);
+    const m = Math.floor((dSec % 3600) / 60);
+    return `${h}h${m.toString().padStart(2, '0')}`;
+  }
+  const d = Math.floor(dSec / 86_400);
+  return `${d}d`;
+}
+
+function truncate(s: string | null | undefined, max: number): string {
+  if (!s) return '';
+  const flat = s.replace(/\s+/g, ' ').trim();
+  if (flat.length <= max) return flat;
+  if (max <= 1) return flat.slice(0, max);
+  return flat.slice(0, max - 1) + '…';
+}
+
+function stateLabel(state: SessionState, currentTool: string | null): string {
+  switch (state) {
+    case 'permission':
+      return currentTool ? `⚠ NEEDS PERMISSION · ${currentTool}` : '⚠ NEEDS PERMISSION';
+    case 'tool':
+      return currentTool ? `RUNNING TOOL · ${currentTool}` : 'RUNNING TOOL';
+    case 'thinking':
+      return 'THINKING';
+    case 'waiting':
+      return 'WAITING FOR INPUT';
+    case 'idle':
+      return 'IDLE';
+    case 'stale':
+      return 'STALE';
+    case 'done':
+      return 'DONE';
+    case 'dead':
+      return 'DEAD';
+    case 'recovered':
+      return 'RECOVERED';
+    default:
+      return String(state).toUpperCase();
+  }
+}
+
+// Box-drawing glyphs for the two focus modes. We hand-draw the borders
+// because Ink's <Box borderStyle> doesn't allow inline captions.
+interface Glyphs {
+  tl: string; tr: string; bl: string; br: string; h: string; v: string;
+}
+const ROUND: Glyphs = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' };
+const BOLD: Glyphs = { tl: '┏', tr: '┓', bl: '┗', br: '┛', h: '━', v: '┃' };
+
+// --- component -------------------------------------------------------------
+
+export interface SessionCardProps {
+  cell: SessionRow;
+  width: number;
+  focused: boolean;
+  nowMs: number;
+  turns?: number;
+  subagents?: number;
+}
+
+export const SessionCard = React.memo(
+  function SessionCard({
+    cell,
+    width,
+    focused,
+    nowMs,
+    turns = 0,
+    subagents = 0,
+  }: SessionCardProps): React.ReactElement {
+    const state = cell.state;
+    const color = STATE_COLOR[state] ?? 'white';
+    const dim = state === 'idle' || state === 'stale' || state === 'done';
+    const showSpinner = state === 'tool' || state === 'thinking';
+    const glyphs = focused ? BOLD : ROUND;
+    const innerWidth = Math.max(10, width - 2); // characters between │ │
+
+    // --- top border: ╭─ <provider · model · cwd> ─── <freshness> ─╮ ---
+    const provider = PROVIDER_LABEL[cell.provider] ?? cell.provider;
+    const model = cell.model ?? '?';
+    const cwd = shortCwd(cell.cwd);
+    const freshness = fmtFreshness(cell.last_event_at_ms, nowMs);
+
+    // Reserve: "─ " before title (2) + " ─" after (2) + "─ " before fresh (2)
+    // + " ─" tail before corner (2) + corners eaten separately. We have
+    // innerWidth chars of space between corners; we draw that as
+    //   "─ <title> " + filler + " <fresh> ─"
+    // so the total is innerWidth.
+    const tailLen = freshness.length + 4; // " " + freshness + " ─"
+    const titleMax = Math.max(3, innerWidth - tailLen - 3); // "─ " title " "
+    const title = truncate(`${provider} · ${model} · ${cwd}`, titleMax);
+    const middleFill = innerWidth - 2 /* "─ " */ - title.length - 1 /* " " before tail */ - 1 /* " " before fresh */ - freshness.length - 2 /* " ─" */;
+    const filler = glyphs.h.repeat(Math.max(1, middleFill));
+    const topLine = `${glyphs.tl}${glyphs.h} ${title} ${filler} ${freshness} ${glyphs.h}${glyphs.tr}`;
+
+    // --- line 2: state line --- (left: spinner+state+tool, right: turns)
+    // Progress hint: turn count + subagent count when nonzero. Lets the user
+    // confirm a session is making progress without opening the detail view.
+    const turnsText =
+      turns > 0
+        ? subagents > 0
+          ? `${turns}t · ${subagents} subs`
+          : `${turns}t`
+        : '';
+    const stateText = stateLabel(state, cell.current_tool);
+
+    // line 2 layout (between │ and │):
+    //   1 (edge pad left) + 2 (spinner col) + state + line2Pad + turns + 1 (edge pad right) = innerWidth
+    // turnsText is rendered as-is (no trailing space). Both edges get an
+    // explicit 1-char pad so the right border aligns with line 3 and the
+    // bottom border regardless of whether turns is shown.
+    const stateBudget = innerWidth - 4 /* both edge pads + spinner col */ - turnsText.length;
+    const stateRendered = truncate(stateText, Math.max(3, stateBudget));
+    const line2Pad = Math.max(
+      0,
+      innerWidth - 4 - stateRendered.length - turnsText.length,
+    );
+
+    // --- line 3: prompt preview ---
+    // Layout: 1 (edge pad left) + 2 (↳ prefix or spaces) + promptText + line3Right + 1 (edge pad right) = innerWidth
+    const promptRaw = cell.last_prompt ?? '';
+    const promptBudget = innerWidth - 4; // both edge pads + 2-char prefix
+    const promptText = promptRaw ? truncate(promptRaw, promptBudget) : '';
+    const line3Right = ' '.repeat(Math.max(0, innerWidth - 4 - promptText.length));
+
+    // --- bottom border ---
+    const bottomLine = `${glyphs.bl}${glyphs.h.repeat(innerWidth)}${glyphs.br}`;
+
+    return (
+      <Box flexDirection="column" width={width} marginRight={1}>
+        {/* top border with embedded title + freshness */}
+        <Text color={color} bold={focused} dimColor={dim}>{topLine}</Text>
+
+        {/* state line */}
+        <Box>
+          <Text color={color} bold={focused} dimColor={dim}>{glyphs.v}</Text>
+          <Text> </Text>
+          {showSpinner ? (
+            <Text color={color}>
+              <Spinner type="dots" />
+              <Text> </Text>
+            </Text>
+          ) : (
+            <Text>  </Text>
+          )}
+          <Text color={color} bold={state === 'permission'} dimColor={dim}>{stateRendered}</Text>
+          <Text>{' '.repeat(line2Pad)}</Text>
+          {turnsText ? <Text dimColor>{turnsText}</Text> : null}
+          <Text> </Text>
+          <Text color={color} bold={focused} dimColor={dim}>{glyphs.v}</Text>
+        </Box>
+
+        {/* prompt preview line */}
+        <Box>
+          <Text color={color} bold={focused} dimColor={dim}>{glyphs.v}</Text>
+          <Text> </Text>
+          {promptText ? (
+            <>
+              <Text dimColor>↳ </Text>
+              <Text>{promptText}</Text>
+            </>
+          ) : (
+            <Text>  </Text>
+          )}
+          <Text>{line3Right}</Text>
+          <Text> </Text>
+          <Text color={color} bold={focused} dimColor={dim}>{glyphs.v}</Text>
+        </Box>
+
+        {/* bottom border */}
+        <Text color={color} bold={focused} dimColor={dim}>{bottomLine}</Text>
+      </Box>
+    );
+  },
+  (prev, next) =>
+    prev.width === next.width &&
+    prev.focused === next.focused &&
+    prev.cell === next.cell &&
+    prev.turns === next.turns &&
+    prev.subagents === next.subagents &&
+    // We bucket nowMs so a 200ms tick doesn't bust memo on every render.
+    Math.floor(prev.nowMs / 1000) === Math.floor(next.nowMs / 1000),
+);
