@@ -192,8 +192,15 @@ export const SessionCard = React.memo(
     const promptText = promptRaw ? truncate(promptRaw, promptBudget) : '';
     const line3Right = ' '.repeat(Math.max(0, innerWidth - 4 - promptText.length));
 
-    // --- bottom border ---
-    const bottomLine = `${glyphs.bl}${glyphs.h.repeat(innerWidth)}${glyphs.br}`;
+    // --- bottom border with session_id label for debugging ---
+    // Format: ╰── sid:ABCDEF12 ─────────╯
+    // Total inner width (between bl and br): innerWidth chars.
+    //   = h*2 + ' ' + sidLabel + ' ' + h*sidPad
+    // so sidPad = innerWidth - 4 - sidLabel.length
+    const sidShort = cell.session_id ? cell.session_id.slice(0, 8) : '?';
+    const sidLabel = `sid:${sidShort}`;
+    const sidPad = Math.max(1, innerWidth - 4 - sidLabel.length);
+    const bottomLine = `${glyphs.bl}${glyphs.h.repeat(2)} ${sidLabel} ${glyphs.h.repeat(sidPad)}${glyphs.br}`;
 
     return (
       <Box flexDirection="column" width={width} marginRight={1}>

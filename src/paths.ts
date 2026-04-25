@@ -37,13 +37,19 @@ export function sessionHash(input: string): string {
 
 // Stable session identity across the system.
 // transcriptPath disambiguates session_id collisions across forks/subagents.
+// Stable session identity: just provider + session_id. We previously included
+// hash(transcript_path) as a third component to disambiguate forks/subagents,
+// but in practice (a) subagents already get distinct session_ids from Claude
+// Code, and (b) different events for the same session sometimes carry
+// different transcript_path values (or none at all), which split one session
+// across multiple keys and made turn counts appear stuck on the wrong row.
+// Drop the third component. The arg is kept for callsite compatibility.
 export function sessionKey(
   provider: Provider,
   sessionId: string,
-  transcriptPath: string | null,
+  _transcriptPath: string | null = null,
 ): string {
-  const h = sessionHash(transcriptPath ?? '');
-  return `${provider}:${sessionId}:${h}`;
+  return `${provider}:${sessionId}`;
 }
 
 // Per-session spool directory (eliminates cross-session write contention).
