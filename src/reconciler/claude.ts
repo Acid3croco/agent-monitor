@@ -96,19 +96,26 @@ function asArray(v: unknown): unknown[] | null {
   return Array.isArray(v) ? v : null;
 }
 
+// Claude Code on a Pro+ plan runs interactive sessions with the 1M-context
+// variant of opus/sonnet by default — but the rollout's `model` field strips
+// the `[1m]` suffix, so we can't tell from there. Empirically Yoann's session
+// shows 858k tokens used (per Claude Code's own /context), which exceeds the
+// older 200k API default. Default everything to 1M for opus/sonnet variants;
+// Haiku stays at 200k. If a non-Pro user hits this, we'll over-estimate the
+// window — the displayed percentage will look low but never wrong.
 const CLAUDE_CONTEXT_WINDOWS: Record<string, number> = {
   'claude-opus-4-7[1m]': 1_000_000,
-  'claude-opus-4-7': 200_000,
+  'claude-opus-4-7': 1_000_000,
   'claude-opus-4-6[1m]': 1_000_000,
-  'claude-opus-4-6': 200_000,
+  'claude-opus-4-6': 1_000_000,
   'claude-sonnet-4-6[1m]': 1_000_000,
-  'claude-sonnet-4-6': 200_000,
+  'claude-sonnet-4-6': 1_000_000,
   'claude-haiku-4-5-20251001': 200_000,
 };
 
 function lookupClaudeWindow(model: string | null): number {
-  if (!model) return 200_000;
-  return CLAUDE_CONTEXT_WINDOWS[model] ?? 200_000;
+  if (!model) return 1_000_000;
+  return CLAUDE_CONTEXT_WINDOWS[model] ?? 1_000_000;
 }
 
 // Pull the assistant's first tool_use block name from `message.content[]`.
@@ -259,12 +266,7 @@ function normalizeClaudeLine(
       const stopReason = msg ? asString(msg.stop_reason) : null;
       contextTokensUsed = extractContextTokensUsed(line);
       if (contextTokensUsed != null) {
-        // The rollout's model field does NOT signal the [1m] (1M-context)
-        // variant — both regular and 1M opus log as `claude-opus-4-7`. So the
-        // model_lookup table can under-report the real window. Auto-grow max
-        // to whichever is larger of (lookup, observed_used). The display
-        // layer caps the percentage at 99 so we never show >100%.
-        contextTokensMax = Math.max(lookupClaudeWindow(model), contextTokensUsed);
+        contextTokensMax = lookupClaudeWindow(model);
         contextSource = 'model_lookup';
       }
       if (stopReason === 'tool_use') {

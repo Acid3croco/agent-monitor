@@ -158,7 +158,8 @@ describe('reconciler: full rollout ingest', () => {
       .all();
     const claudeCtx = contextRows.find((r) => r.provider === 'claude');
     expect(claudeCtx?.used).toBe(2);
-    expect(claudeCtx?.max).toBe(200_000);
+    // Default for opus/sonnet bumped from 200k → 1M (matches Pro-tier reality).
+    expect(claudeCtx?.max).toBe(1_000_000);
     expect(claudeCtx?.src).toBe('model_lookup');
 
     const codexCtx = contextRows.find((r) => r.provider === 'codex');
