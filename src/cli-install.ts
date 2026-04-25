@@ -13,12 +13,14 @@ import {
 export interface InstallHooksArgs {
   dryRun: boolean;
   uninstall: boolean;
+  filesOnly: boolean;
 }
 
 export function parseInstallHooksArgs(argv: string[]): InstallHooksArgs {
   return {
     dryRun: argv.includes('--dry-run'),
     uninstall: argv.includes('--uninstall'),
+    filesOnly: argv.includes('--files-only'),
   };
 }
 
@@ -33,7 +35,28 @@ export async function runInstallHooks(argv: string[]): Promise<number> {
     return 0;
   }
 
+  // --files-only: just deploy the hook scripts, no settings merge, no prompt.
+  // Used by install.sh so the Codex step never depends on the user accepting
+  // the Claude diff first.
+  if (args.filesOnly) {
+    installPlanFiles();
+    process.stdout.write('hook scripts deployed to ~/.local/share/agent-monitor/hooks/\n');
+    return 0;
+  }
+
   const plan = planClaudeHookInstall();
+
+  // Idempotency: if the merged settings would be byte-equal to the current
+  // file, skip the prompt + write entirely. Otherwise every re-run accumulates
+  // a fresh `.bak.<stamp>` for no reason.
+  if (
+    JSON.stringify(plan.currentJson, null, 2) ===
+    JSON.stringify(plan.nextJson, null, 2)
+  ) {
+    process.stdout.write('claude hooks already up to date — no changes\n');
+    return 0;
+  }
+
   process.stdout.write(plan.diffString + '\n');
 
   if (args.dryRun) {

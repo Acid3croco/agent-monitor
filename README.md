@@ -23,7 +23,9 @@ cd agent-monitor
 agent-monitor tui
 ```
 
-`install.sh` shows you a unified diff for every config file it would touch and asks before applying. Pass `--yes` to skip prompts (CI). Pass `--help` to see exactly what it touches.
+`install.sh` shows you a unified diff for every settings/hooks file it would touch and asks before applying. Two filesystem-only steps don't have prompts (the `~/.local/bin/agent-monitor` symlink and the one-line `codex_hooks = true` flag in `config.toml`); both are tiny and reversible.
+
+Pass `--yes` to auto-accept every diff (CI / scripted). Diffs still print to stdout so you can audit the log. Pass `--help` to see exactly what it touches.
 
 If `agent-monitor tui` reports "command not found", `~/.local/bin` isn't on your `PATH`. Either add it (`export PATH="$HOME/.local/bin:$PATH"` in your shell rc) or run `bun run src/cli.ts tui` from the clone.
 

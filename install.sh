@@ -36,7 +36,10 @@ Usage: ./install.sh [--yes] [--help]
 
 Bootstraps agent-monitor on a fresh Linux box. Each step is idempotent.
 
-  --yes, -y   Skip all interactive prompts (CI / scripted setup).
+  --yes, -y   Auto-accept every diff/prompt (CI / scripted setup).
+              Diffs still print to stdout for the install log; consent is
+              implied. Use the interactive default if you want to inspect
+              before applying.
   --help, -h  Show this help.
 
 What it touches on your system:
@@ -110,13 +113,23 @@ if [ "$HAVE_CODEX"  -eq 0 ]; then warn "codex not on PATH  — Codex hooks will 
 
 # ---- 2. bun install -------------------------------------------------------
 say "bun install"
-bun install --silent
+bun install
 ok "deps installed"
 
-# ---- 3. Claude hooks ------------------------------------------------------
+# ---- 3a. Deploy hook scripts ---------------------------------------------
+# Decoupled from the settings-merge step so step 4 (Codex) never depends on
+# the user having accepted the Claude diff first. No prompt — hook scripts
+# under ~/.local/share/agent-monitor/hooks/ are inert until something
+# references them in a config file.
+say "deploy hook scripts"
+bun run src/cli.ts install-hooks --files-only
+
+# ---- 3b. Claude hooks (settings merge) ------------------------------------
 # Delegate to the existing CLI command. It prints a unified diff and prompts
 # y/N — we PRESERVE that on purpose. The diff/prompt is the project's trust
 # gate; install.sh only orchestrates, never bypasses consent.
+# When --yes is set, we pipe `y\n` so the prompt auto-confirms; the diff
+# still scrolls past so the user sees what was applied in their terminal log.
 say "Claude hooks (~/.claude/settings.json)"
 if [ "$YES" -eq 1 ]; then
   # Single 'y' line + EOF; using `yes` would trip SIGPIPE under pipefail.
@@ -136,12 +149,11 @@ CODEX_CONFIG="$CODEX_DIR/config.toml"
 HOOKS_DIR="$HOME/.local/share/agent-monitor/hooks"
 CODEX_HOOK="$HOOKS_DIR/codex-hook.sh"
 
-# install-hooks (Claude path) already deposited the hook scripts under
-# HOOKS_DIR. Defensive double-check so the Codex side isn't pointing at a
-# nonexistent script if step 3 was skipped.
+# Step 3a (--files-only) deployed hook scripts unconditionally; this is just
+# a defensive guard against someone hand-deleting them between steps.
 if [ ! -x "$CODEX_HOOK" ]; then
-  err "$CODEX_HOOK is missing. Step 3 (Claude install-hooks) didn't deploy hook scripts."
-  err "Rerun without --yes and accept the Claude diff, or hand-copy hooks/codex-hook.sh."
+  err "$CODEX_HOOK is missing. Step 3 (deploy hook scripts) didn't run or was rolled back."
+  err "Re-run install.sh, or hand-copy hooks/codex-hook.sh into ~/.local/share/agent-monitor/hooks/"
   exit 1
 fi
 
