@@ -10,6 +10,12 @@
 
 import { sessionKey } from '../paths.ts';
 import { nextState, type StatePatch } from '../state-machine.ts';
+
+// Looser sanity check: session_id must be non-empty and all printable ASCII.
+// We accept synthetic test ids like "s1" or "claude-test-1"; we reject the
+// real-world corruption case where a hook payload truncated mid-UTF-8 yields
+// a session_id ending in U+FFFD (e.g. `<uuid>\xef\xbf\xbd`).
+const SAFE_SID_RE = /^[\x20-\x7e]+$/;
 import {
   findSessionByProviderAndId,
   getSessionByKey,
@@ -249,6 +255,12 @@ export function reduce(
   const lookup = opts.lookup ?? getSessionByKey;
   const findBySid = opts.findBySid ?? findSessionByProviderAndId;
   const source = opts.source ?? 'hook';
+
+  // Defensive: skip events whose session_id has non-printable bytes. Hook
+  // scripts can emit corrupted ids when stdin is truncated mid-UTF-8 — those
+  // values produce phantom rows like `claude:<uuid>\xef\xbf\xbd` that the
+  // indexer can never reconcile away. Quietly drop them.
+  if (!SAFE_SID_RE.test(env.session_id)) return null;
 
   const payload = asObject(env.payload);
   let kind = mapHookEventToKind(env, payload);

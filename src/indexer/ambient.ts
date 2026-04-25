@@ -67,6 +67,9 @@ export interface AmbientOptions {
   // code never sets these -- they default to the real implementations.
   drainFn?: () => Promise<DrainStats>;
   reconcileFn?: () => Promise<ReconcileStats>;
+  // Skip the writer-lock check (used by tests to exercise the drain logic
+  // without touching the real ~/.local/state/agent-monitor/indexer.lock).
+  bypassWriterLock?: boolean;
 }
 
 export interface AmbientHandle {
@@ -94,6 +97,7 @@ export function startAmbientIndexer(opts: AmbientOptions = {}): AmbientHandle {
   const onStatus = opts.onStatus;
   const drain = opts.drainFn ?? defaultDrainOnce;
   const reconcile = opts.reconcileFn ?? defaultRunReconcileOnce;
+  const bypassLock = opts.bypassWriterLock ?? false;
 
   const status: AmbientStatus = emptyStatus();
 
@@ -125,6 +129,10 @@ export function startAmbientIndexer(opts: AmbientOptions = {}): AmbientHandle {
   // reconcile do real work; otherwise we tick along as a read-only TUI and
   // let the other process do the writing.
   function refreshWriterStatus(): void {
+    if (bypassLock) {
+      status.writer = 'this';
+      return;
+    }
     const got = tryAcquireWriter();
     status.writer = got ? 'this' : getWriterStatus();
   }
@@ -207,7 +215,7 @@ export function startAmbientIndexer(opts: AmbientOptions = {}): AmbientHandle {
       // it's mid-write.
       await Promise.allSettled([drainPromise, reconcilePromise]);
       // Release the writer lock so another TUI can claim it on next try.
-      releaseWriter();
+      if (!bypassLock) releaseWriter();
     },
   };
 }

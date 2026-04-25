@@ -71,6 +71,7 @@ function sleep(ms: number): Promise<void> {
 describe('startAmbientIndexer', () => {
   test('drains and reconciles on schedule', async () => {
     const h = startAmbientIndexer({
+      bypassWriterLock: true,
       drainIntervalMs: 50,
       reconcileIntervalMs: 80,
       drainFn: drainFn(),
@@ -86,6 +87,7 @@ describe('startAmbientIndexer', () => {
   test('skip-if-overlapping: a slow drain does not pile up next ticks', async () => {
     state.drainDelayMs = 200;
     const h = startAmbientIndexer({
+      bypassWriterLock: true,
       drainIntervalMs: 30,
       reconcileIntervalMs: 10_000,
       drainFn: drainFn(),
@@ -104,6 +106,7 @@ describe('startAmbientIndexer', () => {
     state.drainShouldThrow = true;
     const errors: string[] = [];
     const h = startAmbientIndexer({
+      bypassWriterLock: true,
       drainIntervalMs: 30,
       reconcileIntervalMs: 10_000,
       drainFn: drainFn(),
@@ -123,6 +126,7 @@ describe('startAmbientIndexer', () => {
   test('a one-shot drain failure does not poison subsequent ticks', async () => {
     state.drainThrowOnce = true;
     const h = startAmbientIndexer({
+      bypassWriterLock: true,
       drainIntervalMs: 30,
       reconcileIntervalMs: 10_000,
       drainFn: drainFn(),
@@ -136,6 +140,7 @@ describe('startAmbientIndexer', () => {
   test('stop() awaits an in-flight drain', async () => {
     state.drainDelayMs = 150;
     const h = startAmbientIndexer({
+      bypassWriterLock: true,
       drainIntervalMs: 1_000_000,
       reconcileIntervalMs: 1_000_000,
       drainFn: drainFn(),
@@ -154,6 +159,7 @@ describe('startAmbientIndexer', () => {
     state.drainThrowOnce = true;
     let lastSeenError: string | null | undefined = undefined;
     const h = startAmbientIndexer({
+      bypassWriterLock: true,
       drainIntervalMs: 30,
       reconcileIntervalMs: 10_000,
       drainFn: drainFn(),
