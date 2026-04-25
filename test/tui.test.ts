@@ -52,6 +52,7 @@ function resetStore(): void {
     focusedKey: null,
     filter: '',
     filterMode: false,
+    density: 'card',
     recentEvents: new Map(),
     eventScroll: 0,
     tick: 0,
@@ -168,6 +169,10 @@ describe('handleGridKey', () => {
     expect(handleGridKey('r', {})).toEqual({ type: 'reconcile' });
   });
 
+  test('d cycles density', () => {
+    expect(handleGridKey('d', {})).toEqual({ type: 'cycle-density' });
+  });
+
   test('unknown keys are no-op', () => {
     expect(handleGridKey('z', {})).toEqual({ type: 'none' });
   });
@@ -219,6 +224,32 @@ describe('computeFocusAfterMove', () => {
     const keys = ['a', 'b', 'c', 'd', 'e'];
     // moving down from c (col 2) — last row only has [d, e]; clamp to e.
     expect(computeFocusAfterMove(keys, 3, 'c', 0, 1)).toBe('e');
+  });
+});
+
+describe('store.density', () => {
+  test('defaults to card', () => {
+    resetStore();
+    expect(useStore.getState().density).toBe('card');
+  });
+
+  test('cycleDensity walks card -> compact -> row -> card', () => {
+    resetStore();
+    const cycle = useStore.getState().cycleDensity;
+    cycle();
+    expect(useStore.getState().density).toBe('compact');
+    cycle();
+    expect(useStore.getState().density).toBe('row');
+    cycle();
+    expect(useStore.getState().density).toBe('card');
+  });
+
+  test('setDensity assigns directly', () => {
+    resetStore();
+    useStore.getState().setDensity('row');
+    expect(useStore.getState().density).toBe('row');
+    useStore.getState().setDensity('compact');
+    expect(useStore.getState().density).toBe('compact');
   });
 });
 

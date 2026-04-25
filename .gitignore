@@ -20,3 +20,4 @@ bun.lockb
 # Internal validation artifacts (smoke captures contain real session paths).
 M5_SMOKE.md
 M6_SMOKE.md
+M7_UX.md
